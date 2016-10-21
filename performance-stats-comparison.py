@@ -153,20 +153,9 @@ def transition_matrix_to_normal_transition_matrix(trans_matrix):
     result = np.true_divide(trans_matrix,m)
     return result
 
-print("Real Performance Statistics")
-real_performance_stats = pd.DataFrame({"flux":map(flux_seq,individual_improvisations),"entropy":map(entropy_seq,individual_improvisations)})
-#real_performance_stats.plot(kind="box")
-print(real_performance_stats.describe())
 
-print("Fake Performance Statistics")
-fake_performances = pd.DataFrame.from_csv("100epoch-120step-performances.csv")
-fake_performance_stats = pd.DataFrame()
-fake_performance_stats["flux"] = fake_performances.apply(flux_seq,axis=0)
-fake_performance_stats["entropy"] = fake_performances.apply(entropy_seq,axis=0)
-print(fake_performance_stats.describe())
 
 ## Make a big 'ol one-step Markov model of all the real performance data
-
 all_trans_mats = map(trans_mat,individual_improvisations)
 big_trans_mat = np.sum(all_trans_mats,axis=0)
 stochastic_mat = transition_matrix_to_stochastic_matrix(big_trans_mat)
@@ -180,4 +169,35 @@ def weighted_choice_sub(weights):
 		if rnd < 0:
 			return i
 
-for (
+def gen_performance_fst_order(n):
+    performance = []
+    performance.append(random.choice(range(NUMBER_GESTURES)))
+    last_state = performance[0]
+    for i in range(n-1):
+        last_state = weighted_choice_sub(stochastic_mat[last_state])
+        performance.append(last_state)
+    return performance
+
+fst_order_performances = pd.DataFrame()
+for n in range(500):
+    p = gen_performance_fst_order(444)
+    fst_order_performances[n] = p
+
+
+print("Real Performance Statistics")
+real_performance_stats = pd.DataFrame({"flux":map(flux_seq,individual_improvisations),"entropy":map(entropy_seq,individual_improvisations)})
+#real_performance_stats.plot(kind="box")
+print(real_performance_stats.describe())
+
+print("Fake Performance Statistics")
+fake_performances = pd.DataFrame.from_csv("100epoch-120step-performances.csv")
+fake_performance_stats = pd.DataFrame()
+fake_performance_stats["flux"] = fake_performances.apply(flux_seq,axis=0)
+fake_performance_stats["entropy"] = fake_performances.apply(entropy_seq,axis=0)
+print(fake_performance_stats.describe())
+
+print("First Order Markov Performance Statistics")
+fst_order_performances_stats = pd.DataFrame()
+fst_order_performances_stats["flux"] = fst_order_performances.apply(flux_seq,axis=0)
+fst_order_performances_stats["entropy"] = fst_order_performances.apply(entropy_seq,axis=0)
+print(fst_order_performances_stats.describe())
