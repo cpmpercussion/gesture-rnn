@@ -96,8 +96,8 @@ individual_improvisations[0]
 
 seq = individual_improvisations[0]
 
-def one_step(i,n):
-    out = np.zeros([n,n])
+def one_step(i):
+    out = np.zeros([9,9])
     out[i[0]][i[1]] += 1
     return out
 
@@ -137,5 +137,16 @@ def flux_seq(seq):
 def entropy_seq(seq):
     return entropy_measure(trans_mat(seq))
 
-fluxes = pd.DataFrame({"flux":map(flux_seq,individual_improvisations),"entropy":map(entropy_seq,individual_improvisations)})
-fluxes.plot()
+print("Real Performance Statistics")
+real_performance_stats = pd.DataFrame({"flux":map(flux_seq,individual_improvisations),"entropy":map(entropy_seq,individual_improvisations)})
+#real_performance_stats.plot(kind="box")
+print(real_performance_stats.describe())
+
+print("Fake Performance Statistics")
+fake_performances = pd.DataFrame.from_csv("100epoch-120step-performances.csv")
+fake_performance_stats = pd.DataFrame()
+fake_performance_stats["flux"] = fake_performances.apply(flux_seq,axis=0)
+fake_performance_stats["entropy"] = fake_performances.apply(entropy_seq,axis=0)
+print(fake_performance_stats.describe())
+
+## Make a big 'ol one-step Markov model of all the real performance data
