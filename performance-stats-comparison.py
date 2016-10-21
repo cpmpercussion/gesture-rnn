@@ -92,16 +92,18 @@ def generate_epochs(num_epochs, num_steps, batch_size):
         epochs.append(batches)
     return epochs
 
-individual_improvisations[0]
-
-seq = individual_improvisations[0]
-
 def one_step(i):
-    out = np.zeros([9,9])
+    """ Creates a one step transition matrix from a tuple
+    Hard coded to 9x9 for the moment"""
+    out = np.zeros([9,9],dtype=np.int)
     out[i[0]][i[1]] += 1
     return out
 
 def trans_mat(seq):
+    """
+    Creates a (natural number) transition matrix from
+    a sequence of states.
+    """
     o_s = np.array([seq[:-1],seq[1:]])
     return np.sum(map(one_step, o_s.T),axis=0)
 
@@ -115,12 +117,8 @@ def flux_measure(mat):
     mat = np.array(mat)
     d = np.trace(mat) # |d|_1 
     m = np.sum(mat) # |M|_1
-    if m == 0:
-        # Take care of case of empty matrix
-        # returning 0 is wrong but more benign than NaN
-        measure = 0
-    else:
-        measure = (m - d) / m # Flux.
+    # Warning: right now, can output inf.
+    measure = np.true_divide((m - d), m) # Flux.
     return measure
 
 def entropy_measure(mat):
@@ -137,6 +135,24 @@ def flux_seq(seq):
 def entropy_seq(seq):
     return entropy_measure(trans_mat(seq))
 
+def transition_matrix_to_stochastic_matrix(trans_matrix):
+    """
+    Convert a transition matrix with entries >1 to a stochastic matrix
+    where rows sum to 1. Rows with zero in all entries stay as zero!
+    """
+    result = np.true_divide(trans_matrix,(np.sum(trans_matrix,axis=1)).reshape(-1,1))
+    return result
+
+def transition_matrix_to_normal_transition_matrix(trans_matrix):
+    """
+    Convert a transition matrix with entries > 1 to a normal
+    transition matrix ( under the element-wise 1-norm i.e. ||M||_1 =
+    1). Zero-matrices stay zero.
+    """
+    m = np.sum(np.abs(trans_matrix))
+    result = np.true_divide(trans_matrix,m)
+    return result
+
 print("Real Performance Statistics")
 real_performance_stats = pd.DataFrame({"flux":map(flux_seq,individual_improvisations),"entropy":map(entropy_seq,individual_improvisations)})
 #real_performance_stats.plot(kind="box")
@@ -150,3 +166,18 @@ fake_performance_stats["entropy"] = fake_performances.apply(entropy_seq,axis=0)
 print(fake_performance_stats.describe())
 
 ## Make a big 'ol one-step Markov model of all the real performance data
+
+all_trans_mats = map(trans_mat,individual_improvisations)
+big_trans_mat = np.sum(all_trans_mats,axis=0)
+stochastic_mat = transition_matrix_to_stochastic_matrix(big_trans_mat)
+normal_mat = transition_matrix_to_normal_transition_matrix(big_trans_mat)
+## TODO: fix stochastic mat calculation so that it uses correct maths. gosh darnit.
+
+def weighted_choice_sub(weights):
+	rnd = random.random() * sum(weights)
+	for i, w in enumerate(weights):
+		rnd -= w
+		if rnd < 0:
+			return i
+
+for (
