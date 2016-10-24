@@ -153,14 +153,11 @@ def transition_matrix_to_normal_transition_matrix(trans_matrix):
     result = np.true_divide(trans_matrix,m)
     return result
 
-
-
 ## Make a big 'ol one-step Markov model of all the real performance data
 all_trans_mats = map(trans_mat,individual_improvisations)
 big_trans_mat = np.sum(all_trans_mats,axis=0)
 stochastic_mat = transition_matrix_to_stochastic_matrix(big_trans_mat)
 normal_mat = transition_matrix_to_normal_transition_matrix(big_trans_mat)
-## TODO: fix stochastic mat calculation so that it uses correct maths. gosh darnit.
 
 def weighted_choice_sub(weights):
 	rnd = random.random() * sum(weights)
@@ -182,7 +179,6 @@ fst_order_performances = pd.DataFrame()
 for n in range(500):
     p = gen_performance_fst_order(444)
     fst_order_performances[n] = p
-
 
 print("Real Performance Statistics")
 real_performance_stats = pd.DataFrame({"flux":map(flux_seq,individual_improvisations),"entropy":map(entropy_seq,individual_improvisations)})
