@@ -197,3 +197,33 @@ fst_order_performances_stats = pd.DataFrame()
 fst_order_performances_stats["flux"] = fst_order_performances.apply(flux_seq,axis=0)
 fst_order_performances_stats["entropy"] = fst_order_performances.apply(entropy_seq,axis=0)
 print(fst_order_performances_stats.describe())
+
+from MarkovModel import MarkovModel
+
+def generate_examples(length, input_sequences):
+    xs = []
+    for seq in input_sequences:
+        for i in range(len(seq)-length):
+            xs.append(seq[i:i+length])
+    return xs
+
+markov_order = 5
+examples = generate_examples(markov_order + 1,individual_improvisations)
+m = MarkovModel(markov_order,NUMBER_GESTURES)
+m.fit(examples)
+
+markov_performances = pd.DataFrame()
+for n in range(500):
+#    primer = random.choice(examples).tolist()
+    primer = m.generate_priming_sequence()
+    perf = m.generate_sequence(primer,444)
+    markov_performances[n] = perf
+
+## try developing an "ensemble model".
+
+print(str(markov_order) + " Order Markov Performance Statistics")
+high_order_markov_stats = pd.DataFrame()
+high_order_markov_stats["flux"] = markov_performances.apply(flux_seq,axis=0)
+high_order_markov_stats["entropy"] = markov_performances.apply(entropy_seq,axis=0)
+print(fst_order_performances_stats.describe())
+plt.style.use('ggplot')
