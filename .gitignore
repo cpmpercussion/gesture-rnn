@@ -1,3 +1,5 @@
 *.pickle
 .ipynb_checkpoints
 *.pyc
+*.tfsave.*
+*.tar.gz
