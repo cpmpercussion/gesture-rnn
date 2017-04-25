@@ -126,9 +126,11 @@ class QuartetDataManager(object):
 			batches.append((np.array(bx),np.array(by)))
 		return(batches)
 
+RNN_MODE_TRAIN = 'train'
+RNN_MODE_RUN = 'run'
 
 class GestureRNN(object):
-	def __init__(self):
+	def __init__(self, mode = RNN_MODE_TRAIN):
 		"""initialize GestureRNN model"""
 		self.vocabulary_size = len(GESTURE_CODES)
 		## Model Hyperparameters
@@ -143,14 +145,18 @@ class GestureRNN(object):
 		self.num_output_classes = self.vocabulary_size ** self.num_output_performers
 		
 		# Training Hyperparamters
-		self.batch_size = 64
-		self.num_steps = 120
+
 		self.global_step = 0
 		learning_rate = 1e-4
 
-		# Running Hyperparameters
-		#self.batch_size = 1
-		#self.num_steps = 1
+		if mode is RNN_MODE_TRAIN:
+			# Training Tensorsize
+			self.batch_size = 64
+			self.num_steps = 120
+		else:
+			# Running Hyperparameters
+			self.batch_size = 1
+			self.num_steps = 1
 
 		# State Storage
 		self.state = None
@@ -213,7 +219,7 @@ class GestureRNN(object):
 			training_loss = self.train_batch(batch_x,batch_y,sess)
 			steps += 1
 			total_training_loss += training_loss
-			if (steps % 2000 == 0): 
+			if (steps % 500 == 0):
 				print("Trained batch:", str(steps), "of", str(total_steps), "loss was:", str(training_loss))
 		return total_training_loss/steps
 
@@ -237,24 +243,63 @@ class GestureRNN(object):
 			self.saver.save(sess,self.model_name())
 		print("It took ", time.time() - start_time, " to train the network.")
 
-def main():
-	g = GestureRNN()
+	def generate_gestures(self,lead_player,prev_ensemble,sess):
+		""" 
+		Evaluates the network once for a lead player amd previous ensemble gestures, and network state.
+		Returns the current ensemble gestures and network state.
+		"""
+		# Apply the inputs
+		gesture_inputs = list(prev_ensemble)
+		gesture_inputs.insert(0,lead_player)
+		print("LSTM inputs are:",gesture_inputs)
+		if self.state is not None:
+			feed_dict = {self.x: [[encode_ensemble_gestures(gesture_inputs)]], self.init_state: self.state}
+		else:
+			feed_dict = {self.x: [[encode_ensemble_gestures(gesture_inputs)]]}
+		preds,self.state = sess.run([self.predictions,self.final_state],feed_dict=feed_dict)
+		output_step = np.random.choice(self.num_output_classes,1,p=np.squeeze(preds))[0] # choose the output step
+		output_gestures = decode_ensemble_gestures(self.num_output_performers,output_step)
+		return output_gestures
+
+	def prepare_model_for_running(self,sess):
+		"""Prepare Model for Evaluation"""
+		sess.run(tf.global_variables_initializer())
+		self.saver.restore(sess, MODEL_NAME)
+		self.state = None
+
+def test_training():
+	g = GestureRNN(mode = "train")
 	q = QuartetDataManager(120,64)
-	t = q.next_epoch()
-	sess = tf.Session()
-	sess.run(tf.global_variables_initializer())
 
-	# batches working
-	g.train_batch(t[0][0],t[0][1],sess)
-	g.train_batch(t[1][0],t[1][1],sess)
-
-	# try epoch
-	g.train_epoch(t,sess)
+	# # batches working
+	# sess = tf.Session()
+	# sess.run(tf.global_variables_initializer())
+	# t = q.next_epoch()
+	# g.train_batch(t[0][0],t[0][1],sess)
+	# g.train_batch(t[1][0],t[1][1],sess)
+	# # try epoch
+	# g.train_epoch(t,sess)
+	# sess.close()
 
 	# try multiple complete session
-	sess.close()
-
 	g.train(q,2)
+
+def test_evaluation():
+	g = GestureRNN(mode = "run")
+	sess = tf.Session()
+	g.prepare_model_for_running(sess)
+	ens_gestures = [0,0,0]
+	g.generate_gestures(0,ens_gestures)
+	g.generate_gestures(1,ens_gestures)
+	g.generate_gestures(2,ens_gestures)
+	g.generate_gestures(3,ens_gestures)
+	g.generate_gestures(4,ens_gestures)
+	g.generate_gestures(5,ens_gestures)
+	g.generate_gestures(6,ens_gestures)
+	g.generate_gestures(7,ens_gestures)
+	g.generate_gestures(8,ens_gestures)
+	g.generate_gestures(0,ens_gestures)
+
 
 
 
