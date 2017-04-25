@@ -2,7 +2,7 @@
 from __future__ import print_function
 import numpy as np
 import tensorflow as tf
-import pickle
+import h5py, pickle
 import time
 import os
 from itertools import permutations
@@ -23,7 +23,7 @@ GESTURE_CODES = {
 ## Evaluating Network
 MODEL_DIR = "/Users/charles/src/ensemble-performance-deep-models/"
 MODEL_NAME = MODEL_DIR + "quartet-lstm-model-512-30-epochs.tfsave"
-LOG_PATH = "/tmp/tensorflow-logs/"
+LOG_PATH = "/tmp/tensorflow/"
 
 def encode_ensemble_gestures(gestures):
 	"""Encode multiple natural numbers into one"""
@@ -47,7 +47,7 @@ class QuartetDataManager(object):
 		"""Load Metatone Corpus and Create Example Data"""
 		self.num_steps = num_steps
 		self.batch_size = batch_size
-		self.examples_file = "MetatoneQuartetExamples-" + str(self.num_steps) + "steps-" + str(self.batch_size) + "batch" + ".pickle"
+		self.examples_file = "MetatoneQuartetExamples-" + str(self.num_steps) + "steps" + ".h5"
 
 		## Make sure corpus is available.
 		URL = "https://github.com/anucc/metatone-analysis/raw/master/metadata/"
@@ -67,15 +67,17 @@ class QuartetDataManager(object):
 		print("Number of performances in training data: ", len(self.ensemble_improvisations))
 		print("Attempting to load",self.examples_file)
 		if os.path.exists(self.examples_file):
-			with open(self.examples_file, 'rb') as e:
-				self.dataset = pickle.load(e)
+			print("File exists, loading.")
+			with h5py.File(self.examples_file, 'r') as data_file:
+				self.dataset = data_file['examples'][:]
 		else:
+			print("File doesn't exist, creating.")
 			self.dataset = self.setup_training_examples()
-			with open(self.examples_file, 'wb') as e:
-				pickle.dump(self.dataset,e)
+			print("Created Training Examples, now saving to h5 file.")
+			self.dataset = np.array(self.dataset)
+			with h5py.File(self.examples_file, 'w') as data_file:
+				data_file.create_dataset('examples',data=self.dataset)
 		print("Loaded", str(len(self.dataset)), "Training Examples.")
-
-
 
 	def setup_test_data(self):
 		"""Load individual parts of non-trained data for testing."""
@@ -142,90 +144,120 @@ class GestureRNN(object):
 		
 		# Training Hyperparamters
 		self.batch_size = 64
-		num_steps = 120
+		self.num_steps = 120
+		self.global_step = 0
 		learning_rate = 1e-4
 
 		# Running Hyperparameters
-		batch_size = 1
-		num_steps = 1
+		#self.batch_size = 1
+		#self.num_steps = 1
+
+		# State Storage
 		self.state = None
+		self.training_state = None
 	
 		## Load the graph
 		tf.reset_default_graph()
 		self.graph = tf.get_default_graph()
 		with self.graph.as_default():
 			with tf.name_scope('input'):
-				self.x = tf.placeholder(tf.int32,[batch_size,num_steps], name='input_placeholder')
-				self.y = tf.placeholder(tf.int32,[batch_size,num_steps], name='labels_placeholder')
+				self.x = tf.placeholder(tf.int32,[self.batch_size,self.num_steps], name='input_placeholder')
+				self.y = tf.placeholder(tf.int32,[self.batch_size,self.num_steps], name='labels_placeholder')
 			self.embeddings = tf.get_variable('embedding_matrix', [self.num_input_classes, num_nodes])
 			self.out_embedding = tf.get_variable('out_emedding_matrix',[self.num_output_classes,num_nodes])
 			self.rnn_inputs = tf.nn.embedding_lookup(self.embeddings,self.x, name="input_embedding")    
 			# RNN section
 			self.cell = tf.contrib.rnn.LSTMCell(num_nodes,state_is_tuple=True)
 			self.cell = tf.contrib.rnn.MultiRNNCell([self.cell] * num_layers, state_is_tuple=True)
-			self.init_state = self.cell.zero_state(batch_size,tf.float32)
+			self.init_state = self.cell.zero_state(self.batch_size,tf.float32)
 			self.rnn_outputs, self.final_state = tf.nn.dynamic_rnn(self.cell, self.rnn_inputs, initial_state=self.init_state)
-			# Output section
+			# Fully-Connected Softmax Section
 			with tf.variable_scope('softmax'):
 				self.W = tf.get_variable('W',[num_nodes,self.num_output_classes])
 				self.b = tf.get_variable('b',[self.num_output_classes], initializer=tf.constant_initializer(0.0))
 			self.rnn_outputs = tf.reshape(self.rnn_outputs,[-1,num_nodes], name = "reshape_rnn_outputs")
 			self.y_reshaped = tf.reshape(self.y,[-1], name = "reshape_labels")
 			self.logits = tf.matmul(self.rnn_outputs, self.W, name = "logits_mul") + self.b
-			self.saver = tf.train.Saver()
+			# Output Operations
+			self.predictions = tf.nn.softmax(self.logits, name = "predictions")
+			self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.logits, labels=self.y_reshaped, name = "cross_entropy"), name="loss")
+			self.train_optimizer = tf.train.AdamOptimizer(learning_rate).minimize(self.loss, name="train_step")
+			# Summaries
+			tf.summary.scalar("loss_summary", self.loss)
+			self.summaries = tf.summary.merge_all()
+			# Saver
+			self.saver = tf.train.Saver(name = "saver")
 		self.writer = tf.summary.FileWriter(LOG_PATH, graph=self.graph)
 
-	def predict(self, x):
-		""" Return prediction operator"""
-		return tf.nn.softmax(self.logits, name="prediction")
-
-
-	def loss(self, batch_x):
-		y_predict = self.predict(batch_x)
-		return tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.logits, labels=self.y_reshaped, name="cross_entropy"), name="loss")
-
-
-	def optimize(self, batch_x, batch_y):
-		return tf.train.AdamOptimizer(learning_rate).minimize(self.loss)
-
-	def model_name():
+	def model_name(self):
 		"""Returns the name of the present model for saving to disk"""
 		return "gesture-rnn-model-" + str(self.num_input_performers) + "to" + str(self.num_output_performers)
 
-	def train_epoch(index, batches):
-		"""Code for training one epoch of training data"""
-		training_loss = 0
-		steps = 0
-		training_state = None
-		print("Starting Epoch " + str(i) + " of " + str(num_epochs))
-		for batch_data, batch_labels in epoch:
-			self.train_batch(batch_data,batch_labels)
-		print("Trained Epoch " + str(i) + " of " + str(num_epochs))
-		training_losses.append(training_loss/steps)
-
-
-	def train_batch(batch_x,batch_y):
+	def train_batch(self, batch_x,batch_y, sess):
+		"""Train the network for just one batch."""
 		feed = {self.x: batch_x, self.y: batch_y}
-		if training_state is not None:
-			feed[init_state] = training_state
-		training_loss_current, training_state, _ = sess.run([total_loss,final_state,train_step],feed_dict=feed)
-		steps += 1
-		training_loss += training_loss_current
-		if (steps % 2000 == 0): 
-			print("Trained batch: " + str(steps) + " of " + str(len(epoch)) + " loss was: " + str(training_loss_current))
+		if self.training_state is not None:
+			feed[self.init_state] = self.training_state
+		training_loss_current, self.training_state, _, summary = sess.run([self.loss,self.final_state,self.train_optimizer,self.summaries],feed_dict=feed)
+		self.global_step += 1
+		self.writer.add_summary(summary, self.global_step)
+		return training_loss_current
 
+	def train_epoch(self, batches, sess):
+		"""Code for training one epoch of training data"""
+		total_training_loss = 0
+		steps = 0
+		total_steps = len(batches)
+		self.training_state = None
+		for batch_x, batch_y in batches:	
+			training_loss = self.train_batch(batch_x,batch_y,sess)
+			steps += 1
+			total_training_loss += training_loss
+			if (steps % 2000 == 0): 
+				print("Trained batch:", str(steps), "of", str(total_steps), "loss was:", str(training_loss))
+		return total_training_loss/steps
 
-	def train(epochs):
+	def train(self, data_manager, num_epochs):
 		"""Train the network for the a number of epochs."""
-		num_epochs = 30
+		# often 30
+		self.num_epochs = num_epochs
 		tf.set_random_seed(2345) # should this be removed?
 		print("Going to train: " + self.model_name())
 		start_time = time.time()
-		self.training_losses = []
+		training_losses = []
 		with tf.Session() as sess:
-			sess.run(tf.initialize_all_variables())
-			for i, epoch in enumerate(generate_epochs(num_epochs, num_steps, batch_size)):
-				self.train_epoch(i,epoch)
-			self.saver.save(sess,model_name)
+			sess.run(tf.global_variables_initializer())
+			for i in range(num_epochs):
+				batches = data_manager.next_epoch()
+				print("Starting Epoch", str(i), "of", str(self.num_epochs))
+				epoch_average_loss = self.train_epoch(i,batches,sess)
+				training_losses.append(epoch_average_loss)
+				print("Trained Epoch", str(i), "of", str(self.num_epochs))
+				saver.save(sess, LOG_PATH + "/" + self.model_name() + ".ckpt", i)
+			self.saver.save(sess,self.model_name())
 		print("It took ", time.time() - start_time, " to train the network.")
+
+def main():
+	g = GestureRNN()
+	q = QuartetDataManager(120,64)
+	t = q.next_epoch()
+	sess = tf.Session()
+	sess.run(tf.global_variables_initializer())
+
+	# batches working
+	g.train_batch(t[0][0],t[0][1],sess)
+	g.train_batch(t[1][0],t[1][1],sess)
+
+	# try epoch
+	g.train_epoch(t,sess)
+
+	# try multiple complete session
+	sess.close()
+
+	g.train(q,2)
+
+
+
+
+
 
