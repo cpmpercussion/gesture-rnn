@@ -1,11 +1,13 @@
 """Gesture-RNN model for simulating ensemble interaction on touch-screens."""
 from __future__ import print_function
 import numpy as np
+import pandas as pd
 import tensorflow as tf
 import h5py, pickle
 import time
 import os
 from itertools import permutations
+import matplotlib.pyplot as plt
 
 ## Int values for Gesture codes.
 NUMBER_GESTURES = 9
@@ -36,7 +38,7 @@ def decode_ensemble_gestures(num_perfs,code):
 	"""Decodes ensemble gestures from a single int"""
 	gestures = []
 	for i in range(num_perfs):
-		part = code % (vocabulary_size ** (i+1))
+		part = code % (len(GESTURE_CODES) ** (i+1))
 		gestures.append(part / (len(GESTURE_CODES) ** i))
 	return gestures
 
@@ -55,13 +57,13 @@ class QuartetDataManager(object):
 		if not os.path.exists(PICKLE_FILE):
 			urlretrieve(URL + PICKLE_FILE, PICKLE_FILE)
 		with open(PICKLE_FILE, 'rb') as f:
-				metatone_dataset = pickle.load(f)
+				self.metatone_dataset = pickle.load(f)
 
 		### Load Quartet Improvisations.
-		improvisations = metatone_dataset[
-			(metatone_dataset["performance_type"] == "improvisation") &
-			(metatone_dataset["performance_context"] != "demonstration") &
-			(metatone_dataset["number_performers"] == 4)]
+		improvisations = self.metatone_dataset[
+			(self.metatone_dataset["performance_type"] == "improvisation") &
+			(self.metatone_dataset["performance_context"] != "demonstration") &
+			(self.metatone_dataset["number_performers"] == 4)]
 		gesture_data = improvisations['gestures']
 		self.ensemble_improvisations = gesture_data.tolist()
 		print("Number of performances in training data: ", len(self.ensemble_improvisations))
@@ -81,15 +83,16 @@ class QuartetDataManager(object):
 
 	def setup_test_data(self):
 		"""Load individual parts of non-trained data for testing."""
-		improvisations = metatone_dataset[
-			(metatone_dataset["performance_type"] == "improvisation") &
-			(metatone_dataset["performance_context"] != "demonstration") &
-			(metatone_dataset["number_performers"] != 4)]
+		improvisations = self.metatone_dataset[
+			(self.metatone_dataset["performance_type"] == "improvisation") &
+			(self.metatone_dataset["performance_context"] != "demonstration") &
+			(self.metatone_dataset["number_performers"] != 4)]
 		gesture_data = improvisations['gestures']
 		self.individual_improvisations = []
 		for perf in gesture_data.tolist():
 			for one_perf in perf.T:
 				self.individual_improvisations.append(one_perf)
+		return self.individual_improvisations
 
 	def setup_training_examples(self):
 		"""Setup training examples from corpus."""
@@ -131,8 +134,10 @@ RNN_MODE_RUN = 'run'
 
 class GestureRNN(object):
 	def __init__(self, mode = RNN_MODE_TRAIN):
-		"""initialize GestureRNN model"""
-		self.vocabulary_size = len(GESTURE_CODES)
+		"""
+		Initialize GestureRNN model. Use "mode = 'run'" for evaluation graph 
+		and "mode = "train" for training graph.
+		"""
 		## Model Hyperparameters
 		num_nodes = 512
 		num_layers = 3
@@ -140,21 +145,23 @@ class GestureRNN(object):
 		## IO Hyperparameters
 		self.num_input_performers = 4
 		self.num_output_performers = 3
+		self.vocabulary_size = len(GESTURE_CODES)
 		self.num_classes = self.vocabulary_size
 		self.num_input_classes = self.vocabulary_size ** self.num_input_performers
 		self.num_output_classes = self.vocabulary_size ** self.num_output_performers
 		
 		# Training Hyperparamters
-
 		self.global_step = 0
 		learning_rate = 1e-4
 
 		if mode is RNN_MODE_TRAIN:
+			print("Loading GestureRNN for training.")
 			# Training Tensorsize
 			self.batch_size = 64
 			self.num_steps = 120
 		else:
 			# Running Hyperparameters
+			print("Loading GestureRNN for evaluation.")
 			self.batch_size = 1
 			self.num_steps = 1
 
@@ -243,15 +250,21 @@ class GestureRNN(object):
 			self.saver.save(sess,self.model_name())
 		print("It took ", time.time() - start_time, " to train the network.")
 
+	def prepare_model_for_running(self,sess):
+		"""Prepare Model for Evaluation"""
+		sess.run(tf.global_variables_initializer())
+		self.saver.restore(sess, MODEL_NAME)
+		self.state = None
+
 	def generate_gestures(self,lead_player,prev_ensemble,sess):
 		""" 
-		Evaluates the network once for a lead player amd previous ensemble gestures, and network state.
-		Returns the current ensemble gestures and network state.
+		Evaluates the network once for a lead player and previous ensemble gestures.
+		Returns the current ensemble gestures. The network state is preserved in between
+		evaluations.
 		"""
-		# Apply the inputs
 		gesture_inputs = list(prev_ensemble)
 		gesture_inputs.insert(0,lead_player)
-		print("LSTM inputs are:",gesture_inputs)
+		print("GestureRNN inputs are:",gesture_inputs)
 		if self.state is not None:
 			feed_dict = {self.x: [[encode_ensemble_gestures(gesture_inputs)]], self.init_state: self.state}
 		else:
@@ -261,45 +274,86 @@ class GestureRNN(object):
 		output_gestures = decode_ensemble_gestures(self.num_output_performers,output_step)
 		return output_gestures
 
-	def prepare_model_for_running(self,sess):
-		"""Prepare Model for Evaluation"""
-		sess.run(tf.global_variables_initializer())
-		self.saver.restore(sess, MODEL_NAME)
-		self.state = None
+	def generate_performance(self,lead_performance,sess):
+		"""
+		Generates ensemble responses to a complete performance by a lead player.
+		lead_performance should be a list of gesture codes.
+		"""
+		generated_performance = pd.DataFrame()
+		generated_performance["lead"] = lead_performance
+		output_perf = []
+		previous_ensemble = decode_ensemble_gestures(self.num_output_performers,0)
+		self.prepare_model_for_running(sess)
+		for gesture in lead_performance:
+			previous_ensemble = self.generate_gestures(gesture,previous_ensemble,sess)
+			output_perf.append(previous_ensemble)
+		out = np.array(output_perf)
+		for i, seq in enumerate(out.T):
+			name = "rnn-player-" + str(i)
+			generated_performance[name] = seq
+		return generated_performance
 
 def test_training():
+	""" Test Training. """
 	g = GestureRNN(mode = "train")
 	q = QuartetDataManager(120,64)
-
-	# # batches working
-	# sess = tf.Session()
-	# sess.run(tf.global_variables_initializer())
-	# t = q.next_epoch()
-	# g.train_batch(t[0][0],t[0][1],sess)
-	# g.train_batch(t[1][0],t[1][1],sess)
-	# # try epoch
-	# g.train_epoch(t,sess)
-	# sess.close()
-
-	# try multiple complete session
 	g.train(q,2)
 
 def test_evaluation():
+	""" Test evaluation of individual gestures. """
 	g = GestureRNN(mode = "run")
 	sess = tf.Session()
 	g.prepare_model_for_running(sess)
 	ens_gestures = [0,0,0]
-	g.generate_gestures(0,ens_gestures)
-	g.generate_gestures(1,ens_gestures)
-	g.generate_gestures(2,ens_gestures)
-	g.generate_gestures(3,ens_gestures)
-	g.generate_gestures(4,ens_gestures)
-	g.generate_gestures(5,ens_gestures)
-	g.generate_gestures(6,ens_gestures)
-	g.generate_gestures(7,ens_gestures)
-	g.generate_gestures(8,ens_gestures)
-	g.generate_gestures(0,ens_gestures)
+	ens_gestures = g.generate_gestures(0,ens_gestures,sess)
+	print("New Ensemble Gestures are: ",ens_gestures)
+	ens_gestures = g.generate_gestures(1,ens_gestures,sess)
+	print("New Ensemble Gestures are: ",ens_gestures)
+	ens_gestures = g.generate_gestures(2,ens_gestures,sess)
+	print("New Ensemble Gestures are: ",ens_gestures)
+	ens_gestures = g.generate_gestures(3,ens_gestures,sess)
+	print("New Ensemble Gestures are: ",ens_gestures)
+	ens_gestures = g.generate_gestures(4,ens_gestures,sess)
+	print("New Ensemble Gestures are: ",ens_gestures)
+	ens_gestures = g.generate_gestures(5,ens_gestures,sess)
+	print("New Ensemble Gestures are: ",ens_gestures)
+	ens_gestures = g.generate_gestures(6,ens_gestures,sess)
+	print("New Ensemble Gestures are: ",ens_gestures)
+	ens_gestures = g.generate_gestures(7,ens_gestures,sess)
+	print("New Ensemble Gestures are: ",ens_gestures)
+	ens_gestures = g.generate_gestures(8,ens_gestures,sess)
+	print("New Ensemble Gestures are: ",ens_gestures)
+	ens_gestures = g.generate_gestures(0,ens_gestures,sess)
+	sess.close()
 
+def plot_gesture_only_score(plot_title, gestures):
+    """ Plots a gesture score of gestures only """
+    idx = gestures.index
+    plt.style.use('ggplot')
+    # ax = plt.figure(figsize=(35,10),frameon=False,tight_layout=True).add_subplot(111)
+    ax = plt.figure(figsize=(14, 4), frameon=False, tight_layout=True).add_subplot(111)
+    ax.yaxis.grid()
+    plt.ylim(-0.5, 8.5)
+    plt.yticks(np.arange(9), ['n', 'ft', 'st', 'fs', 'fsa', 'vss', 'bs', 'ss', 'c'])
+    for n in gestures.columns:
+        plt.plot(gestures.index, gestures[n], '-', label=n)
+    plt.savefig(plot_title + '.pdf', dpi=150, format="pdf")
+    
+def generate_a_fake_performance():
+	q = QuartetDataManager(120,64)
+	individual_improvisations = q.setup_test_data()
+
+	print("Number of performances for testing: ", len(individual_improvisations))
+	## Do the math.
+	g = GestureRNN(mode = "run")
+	num_performances = 1
+	for i in range(num_performances):
+		player_one = np.random.choice(individual_improvisations)
+		player_one = player_one.tolist()
+		with tf.Session() as sess:
+			perf = g.generate_performance(player_one,sess)
+		plot_name = g.model_name + "-perf-" + str(i)
+		plot_gesture_only_score(plot_name,perf)
 
 
 
