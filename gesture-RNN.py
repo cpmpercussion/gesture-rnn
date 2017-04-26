@@ -1,4 +1,6 @@
-"""Gesture-RNN model for simulating ensemble interaction on touch-screens."""
+"""
+Gesture-RNN model for simulating ensemble interaction on touch-screens.
+"""
 from __future__ import print_function
 import numpy as np
 import pandas as pd
@@ -26,6 +28,16 @@ GESTURE_CODES = {
 MODEL_DIR = "/Users/charles/src/ensemble-performance-deep-models/"
 MODEL_NAME = MODEL_DIR + "quartet-lstm-model-512-30-epochs.tfsave"
 LOG_PATH = "/tmp/tensorflow/"
+
+## Flags
+tf.app.flags.DEFINE_boolean("train", False, "Train the network and save the model.")
+tf.app.flags.DEFINE_integer("epochs", 30, "Number of epochs to train for (default 30).")
+tf.app.flags.DEFINE_boolean("generate", False, "Generate some sample test output.")
+tf.app.flags.DEFINE_integer("num_perfs", 10, "Number of sample performances to generate.")
+tf.app.flags.DEFINE_boolean("test_eval", False, "Test generation of a few performance steps.")
+tf.app.flags.DEFINE_boolean("test_train", False, "Test training of two epochs (without saving the model).")
+FLAGS = tf.app.flags.FLAGS
+
 
 def encode_ensemble_gestures(gestures):
 	"""Encode multiple natural numbers into one"""
@@ -230,11 +242,10 @@ class GestureRNN(object):
 				print("Trained batch:", str(steps), "of", str(total_steps), "loss was:", str(training_loss))
 		return total_training_loss/steps
 
-	def train(self, data_manager, num_epochs):
+	def train(self, data_manager, num_epochs, saving=True):
 		"""Train the network for the a number of epochs."""
 		# often 30
 		self.num_epochs = num_epochs
-		tf.set_random_seed(2345) # should this be removed?
 		print("Going to train: " + self.model_name())
 		start_time = time.time()
 		training_losses = []
@@ -246,8 +257,10 @@ class GestureRNN(object):
 				epoch_average_loss = self.train_epoch(batches,sess)
 				training_losses.append(epoch_average_loss)
 				print("Trained Epoch", str(i), "of", str(self.num_epochs))
-				self.saver.save(sess, LOG_PATH + "/" + self.model_name() + ".ckpt", i)
-			self.saver.save(sess,self.model_name())
+				if saving:
+					self.saver.save(sess, LOG_PATH + "/" + self.model_name() + ".ckpt", i)
+			if saving:
+				self.saver.save(sess,self.model_name())
 		print("It took ", time.time() - start_time, " to train the network.")
 
 	def prepare_model_for_running(self,sess):
@@ -295,9 +308,7 @@ class GestureRNN(object):
 
 def test_training():
 	""" Test Training. """
-	g = GestureRNN(mode = "train")
-	q = QuartetDataManager(120,64)
-	g.train(q,2)
+	train_model(epochs = 2, saving=False)
 
 def test_evaluation():
 	""" Test evaluation of individual gestures. """
@@ -339,24 +350,38 @@ def plot_gesture_only_score(plot_title, gestures):
         plt.plot(gestures.index, gestures[n], '-', label=n)
     plt.savefig(plot_title + '.pdf', dpi=150, format="pdf")
     
-def generate_a_fake_performance():
+def generate_a_fake_performance(num_performances = 1):
 	q = QuartetDataManager(120,64)
 	individual_improvisations = q.setup_test_data()
 
 	print("Number of performances for testing: ", len(individual_improvisations))
 	## Do the math.
 	g = GestureRNN(mode = "run")
-	num_performances = 1
 	for i in range(num_performances):
 		player_one = np.random.choice(individual_improvisations)
 		player_one = player_one.tolist()
 		with tf.Session() as sess:
 			perf = g.generate_performance(player_one,sess)
-		plot_name = g.model_name + "-perf-" + str(i)
+		plot_name = g.model_name() + "-perf-" + str(i)
 		plot_gesture_only_score(plot_name,perf)
 
+def train_model(epochs = 30):
+	""" Train the model for a number of epochs. """
+	tf.set_random_seed(2345) # should this be removed?
+	q = QuartetDataManager(120,64)
+	g = GestureRNN(mode = "train")
+	g.train(q,epochs)
+	print("Done training phew.")
 
+def main(_):
+    if FLAGS.train:
+    	train_model(epochs = FLAGS.epochs, saving = True)
+    if FLAGS.generate:
+    	generate_a_fake_performance(num_performances = FLAGS.num_perfs)
+    if FLAGS.test_eval:
+    	test_evalution()
+    if FLAGS.test_train:
+    	test_training()
 
-
-
-
+if __name__ == "__main__":
+    tf.app.run(main=main)
