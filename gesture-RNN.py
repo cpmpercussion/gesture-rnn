@@ -379,7 +379,7 @@ def main(_):
     if FLAGS.generate:
     	generate_a_fake_performance(num_performances = FLAGS.num_perfs)
     if FLAGS.test_eval:
-    	test_evalution()
+    	test_evaluation()
     if FLAGS.test_train:
     	test_training()
 
