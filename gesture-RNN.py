@@ -38,7 +38,6 @@ tf.app.flags.DEFINE_boolean("test_eval", False, "Test generation of a few perfor
 tf.app.flags.DEFINE_boolean("test_train", False, "Test training of two epochs (without saving the model).")
 FLAGS = tf.app.flags.FLAGS
 
-
 def encode_ensemble_gestures(gestures):
 	"""Encode multiple natural numbers into one"""
 	encoded = 0
@@ -374,6 +373,7 @@ def train_model(epochs = 30):
 	print("Done training phew.")
 
 def main(_):
+	""" Command line accessible functions. """
     if FLAGS.train:
     	train_model(epochs = FLAGS.epochs, saving = True)
     if FLAGS.generate:
