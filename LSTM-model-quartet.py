@@ -183,7 +183,6 @@ with graph.as_default():
     y_reshaped = tf.reshape(y,[-1])
     logits = tf.matmul(rnn_outputs, W) + b
     predictions = tf.nn.softmax(logits)
-
     total_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=y_reshaped))
     train_step = tf.train.AdamOptimizer(learning_rate).minimize(total_loss)
     saver = tf.train.Saver()
