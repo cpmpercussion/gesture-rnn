@@ -236,10 +236,10 @@ class GestureRNN(object):
 			for i in range(num_epochs):
 				batches = data_manager.next_epoch()
 				print("Starting Epoch", str(i), "of", str(self.num_epochs))
-				epoch_average_loss = self.train_epoch(i,batches,sess)
+				epoch_average_loss = self.train_epoch(batches,sess)
 				training_losses.append(epoch_average_loss)
 				print("Trained Epoch", str(i), "of", str(self.num_epochs))
-				saver.save(sess, LOG_PATH + "/" + self.model_name() + ".ckpt", i)
+				self.saver.save(sess, LOG_PATH + "/" + self.model_name() + ".ckpt", i)
 			self.saver.save(sess,self.model_name())
 		print("It took ", time.time() - start_time, " to train the network.")
 
