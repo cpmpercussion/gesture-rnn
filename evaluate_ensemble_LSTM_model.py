@@ -1,4 +1,4 @@
-""" Evaluate the Ensemble Level LSTM Model """
+""" Ensemble Level LSTM Model """
 from __future__ import print_function
 import numpy as np
 import tensorflow as tf
@@ -39,14 +39,47 @@ def decode_ensemble_gestures(num_perfs,code):
 MODEL_DIR = "/Users/charles/src/ensemble-performance-deep-models/"
 MODEL_NAME = MODEL_DIR + "quartet-lstm-model-512-30-epochs.tfsave"
 
-class EnsembleLSTMNetwork:
+
+class GestureRNNMeta:
+
+    def __init__(self):
+        """Load the meta graph and the model."""
+        self.sess = tf.Session()
+        self.saver = tf.train.import_meta_graph(MODEL_NAME + '.meta')
+        self.sess.run(tf.global_variables_initializer())
+        self.saver.restore(self.sess, MODEL_NAME)
+        self.state = None
+
+    def close(self):
+        self.sess.close()
+
+    def generate_gestures(self,lead_player,prev_ensemble):
+        """
+        Evaluates the network once for a lead player amd previous ensemble gestures, and network state.
+        Returns the current ensemble gestures and network state.
+        """
+        # Apply the inputs
+        gesture_inputs = list(prev_ensemble)
+        gesture_inputs.insert(0,lead_player)
+        print("LSTM inputs are:",gesture_inputs)
+        if self.state is not None:
+            feed_dict = {self.x: [[encode_ensemble_gestures(gesture_inputs)]], self.init_state: self.state}
+        else:
+            feed_dict = {self.x: [[encode_ensemble_gestures(gesture_inputs)]]}
+        preds,self.state = self.sess.run([self.predictions,self.final_state],feed_dict=feed_dict)
+        output_step = np.random.choice(self.num_output_classes,1,p=np.squeeze(preds))[0] # choose the output step
+        output_gestures = decode_ensemble_gestures(self.num_output_performers,output_step)
+        return output_gestures
+
+
+
+class GestureRNN:
 
     def reset_graph(self):
         """Resets Tensorflow's computation graph."""
         if 'sess' in globals() and sess:
             sess.close()
         tf.reset_default_graph()
-
 
     def __init__(self):
         ## Training Network
@@ -114,7 +147,6 @@ class EnsembleLSTMNetwork:
             gesture_inputs = list(prev_ensemble)
             gesture_inputs.insert(0,lead_player)
             print("LSTM inputs are:",gesture_inputs)
-            #print("State:",self.state)
             if self.state is not None:
                 feed_dict = {self.x: [[encode_ensemble_gestures(gesture_inputs)]], self.init_state: self.state}
             else:
