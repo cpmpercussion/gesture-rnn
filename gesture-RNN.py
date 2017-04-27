@@ -26,7 +26,6 @@ GESTURE_CODES = {
 
 ## Evaluating Network
 MODEL_DIR = "/Users/charles/src/ensemble-performance-deep-models/"
-MODEL_NAME = MODEL_DIR + "quartet-lstm-model-512-30-epochs.tfsave"
 LOG_PATH = "/tmp/tensorflow/"
 
 ## Flags
@@ -265,7 +264,7 @@ class GestureRNN(object):
 	def prepare_model_for_running(self,sess):
 		"""Prepare Model for Evaluation"""
 		sess.run(tf.global_variables_initializer())
-		self.saver.restore(sess, MODEL_NAME)
+		self.saver.restore(sess, MODEL_DIR + self.model_name())
 		self.state = None
 
 	def generate_gestures(self,lead_player,prev_ensemble,sess):
@@ -374,14 +373,14 @@ def train_model(epochs = 30):
 
 def main(_):
 	""" Command line accessible functions. """
-    if FLAGS.train:
-    	train_model(epochs = FLAGS.epochs, saving = True)
-    if FLAGS.generate:
-    	generate_a_fake_performance(num_performances = FLAGS.num_perfs)
-    if FLAGS.test_eval:
-    	test_evaluation()
-    if FLAGS.test_train:
-    	test_training()
+	if FLAGS.train:
+		train_model(epochs = FLAGS.epochs, saving = True)
+	if FLAGS.generate:
+		generate_a_fake_performance(num_performances = FLAGS.num_perfs)
+	if FLAGS.test_eval:
+		test_evaluation()
+	if FLAGS.test_train:
+		test_training()
 
 if __name__ == "__main__":
     tf.app.run(main=main)
