@@ -141,9 +141,10 @@ class QuartetDataManager(object):
 
 RNN_MODE_TRAIN = 'train'
 RNN_MODE_RUN = 'run'
+ENSEMBLE_SIZE_QUARTET = 4
 
 class GestureRNN(object):
-	def __init__(self, mode = RNN_MODE_TRAIN):
+	def __init__(self, mode = RNN_MODE_TRAIN, ensemble_size = 4):
 		"""
 		Initialize GestureRNN model. Use "mode = 'run'" for evaluation graph 
 		and "mode = "train" for training graph.
@@ -153,8 +154,8 @@ class GestureRNN(object):
 		num_layers = 3
 
 		## IO Hyperparameters
-		self.num_input_performers = 4
-		self.num_output_performers = 3
+		self.num_input_performers = ensemble_size
+		self.num_output_performers = ensemble_size - 1
 		self.vocabulary_size = len(GESTURE_CODES)
 		self.num_classes = self.vocabulary_size
 		self.num_input_classes = self.vocabulary_size ** self.num_input_performers
@@ -164,14 +165,14 @@ class GestureRNN(object):
 		self.global_step = 0
 		learning_rate = 1e-4
 
+		print("Loading", self.num_input_performers, "to", self.num_output_performers ,"GestureRNN in", mode, "mode.")
+
 		if mode is RNN_MODE_TRAIN:
-			print("Loading GestureRNN for training.")
 			# Training Tensorsize
 			self.batch_size = 64
 			self.num_steps = 120
 		else:
 			# Running Hyperparameters
-			print("Loading GestureRNN for evaluation.")
 			self.batch_size = 1
 			self.num_steps = 1
 
