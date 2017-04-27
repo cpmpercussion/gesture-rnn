@@ -275,7 +275,6 @@ class GestureRNN(object):
 		"""
 		gesture_inputs = list(prev_ensemble)
 		gesture_inputs.insert(0,lead_player)
-		print("GestureRNN inputs are:",gesture_inputs)
 		if self.state is not None:
 			feed_dict = {self.x: [[encode_ensemble_gestures(gesture_inputs)]], self.init_state: self.state}
 		else:
@@ -304,35 +303,24 @@ class GestureRNN(object):
 			generated_performance[name] = seq
 		return generated_performance
 
-def test_training():
+def test_training(epochs = 2):
 	""" Test Training. """
-	train_model(epochs = 2, saving=False)
+	train_model(epochs, saving=False)
 
-def test_evaluation():
-	""" Test evaluation of individual gestures. """
+def test_evaluation(num_trials = 100):
+	"""
+	Test evaluation of individual gestures. 
+	This is the template code for real-time use in Metatone Classifier.
+	"""
+	print("Going to run an RNN generation test.")
 	g = GestureRNN(mode = "run")
 	sess = tf.Session()
 	g.prepare_model_for_running(sess)
 	ens_gestures = [0,0,0]
-	ens_gestures = g.generate_gestures(0,ens_gestures,sess)
-	print("New Ensemble Gestures are: ",ens_gestures)
-	ens_gestures = g.generate_gestures(1,ens_gestures,sess)
-	print("New Ensemble Gestures are: ",ens_gestures)
-	ens_gestures = g.generate_gestures(2,ens_gestures,sess)
-	print("New Ensemble Gestures are: ",ens_gestures)
-	ens_gestures = g.generate_gestures(3,ens_gestures,sess)
-	print("New Ensemble Gestures are: ",ens_gestures)
-	ens_gestures = g.generate_gestures(4,ens_gestures,sess)
-	print("New Ensemble Gestures are: ",ens_gestures)
-	ens_gestures = g.generate_gestures(5,ens_gestures,sess)
-	print("New Ensemble Gestures are: ",ens_gestures)
-	ens_gestures = g.generate_gestures(6,ens_gestures,sess)
-	print("New Ensemble Gestures are: ",ens_gestures)
-	ens_gestures = g.generate_gestures(7,ens_gestures,sess)
-	print("New Ensemble Gestures are: ",ens_gestures)
-	ens_gestures = g.generate_gestures(8,ens_gestures,sess)
-	print("New Ensemble Gestures are: ",ens_gestures)
-	ens_gestures = g.generate_gestures(0,ens_gestures,sess)
+	for i in range(num_trials):
+		n = np.random.randint(len(GESTURE_CODES))
+		ens_gestures = g.generate_gestures(n,ens_gestures,sess)
+		print("in:", n, "out:", ens_gestures)
 	sess.close()
 
 def plot_gesture_only_score(plot_title, gestures):
