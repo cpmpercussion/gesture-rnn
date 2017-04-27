@@ -2,8 +2,7 @@
 from __future__ import print_function
 import numpy as np
 import tensorflow as tf
-import pickle
-        
+
 ## Int values for Gesture codes.
 NUMBER_GESTURES = 9
 GESTURE_CODES = {
@@ -17,21 +16,19 @@ GESTURE_CODES = {
     'SS': 7,
     'C': 8}
 
-vocabulary_size = len(GESTURE_CODES)
-
 def encode_ensemble_gestures(gestures):
     """Encode multiple natural numbers into one"""
     encoded = 0
     for i, g in enumerate(gestures):
-        encoded += g * (vocabulary_size ** i)
+        encoded += g * (len(GESTURE_CODES) ** i)
     return encoded
         
 def decode_ensemble_gestures(num_perfs,code):
     """Decodes ensemble gestures from a single int"""
     gestures = []
     for i in range(num_perfs):
-        part = code % (vocabulary_size ** (i+1))
-        gestures.append(part / (vocabulary_size ** i))
+        part = code % (len(GESTURE_CODES) ** (i+1))
+        gestures.append(part / (len(GESTURE_CODES) ** i))
     return gestures
 
 
@@ -88,9 +85,9 @@ class GestureRNN:
         self.num_input_performers = 4
         self.num_output_performers = 3
 
-        self.num_classes = vocabulary_size
-        self.num_input_classes = vocabulary_size ** self.num_input_performers
-        self.num_output_classes = vocabulary_size ** self.num_output_performers
+        self.num_classes = len(GESTURE_CODES)
+        self.num_input_classes = self.num_classes ** self.num_input_performers
+        self.num_output_classes = self.num_classes ** self.num_output_performers
         batch_size = 64
         num_steps = 120
         num_layers = 3
