@@ -352,13 +352,33 @@ def generate_a_fake_performance(num_performances = 1):
 		plot_name = g.model_name() + "-perf-" + str(i)
 		plot_gesture_only_score(plot_name,perf)
 
-def train_model(epochs = 30):
+def train_quartet(epochs = 30):
 	""" Train the model for a number of epochs. """
-	tf.set_random_seed(2345) # should this be removed?
+	tf.set_random_seed(2345)
 	q = QuartetDataManager(120,64)
 	g = GestureRNN(mode = "train")
 	g.train(q,epochs)
 	print("Done training phew.")
+
+def train_duo(epochs = 30):
+	""" Train the model for a number of epochs. """
+	tf.set_random_seed(2345) # should this be removed?
+	# d = DuetDataManager(120,64)
+	g = GestureRNN(mode = "train", ensemble_size = 2)
+	# g.train(d,epochs)
+	print("Not implemented yet! Need to make the DuetDataManager as well!")
+
+def test_duo_eval():
+	print("Duos not implemented yet, look in the notebook directory.")
+	g = GestureRNN(mode = "run", ensemble_size = 2)
+	sess = tf.Session()
+	# g.prepare_model_for_running(sess) # this will fail as it's not trained.
+	ens_gestures = [0]
+	for i in range(num_trials):
+		n = np.random.randint(len(GESTURE_CODES))
+		# ens_gestures = g.generate_gestures(n,ens_gestures,sess)
+		print("in:", n, "out:", ens_gestures)
+	sess.close()
 
 def main(_):
 	""" Command line accessible functions. """
