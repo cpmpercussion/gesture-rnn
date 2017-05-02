@@ -4,3 +4,9 @@
 *.tfsave.*
 *.tar.gz
 *.h5
+
+*.data-00000-of-00001
+
+*.index
+
+*.meta
