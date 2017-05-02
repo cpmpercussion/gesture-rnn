@@ -352,6 +352,14 @@ def generate_a_fake_performance(num_performances = 1):
 		plot_name = g.model_name() + "-perf-" + str(i)
 		plot_gesture_only_score(plot_name,perf)
 
+def train_model(epochs, model='quartet'):
+	""" Train the model for a number of epochs. """
+	# Presently, only the quartet model is working.
+	if model is 'quartet':
+		train_quartet(epochs)
+	elif model is 'duo':
+		train_duo(epochs)
+
 def train_quartet(epochs = 30):
 	""" Train the model for a number of epochs. """
 	tf.set_random_seed(2345)
