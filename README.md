@@ -62,9 +62,10 @@ The system works as follows: A live performer plays on a touch-screen instrument
 
 ![Live Performance System](https://github.com/cpmpercussion/ensemble-performance-deep-models/raw/master/images/live-performance-system.jpg)
 
-This system is currently working well enough for in-lab demonstrations and we're hoping to show it off at a few events soon!
+This system is [currently working](https://youtu.be/6eg5VSRqIDA) well enough for in-lab demonstrations and we're hoping to show it off at a few events soon!
 
-<iframe width="560" height="315" src="https://www.youtube.com/embed/6eg5VSRqIDA" frameborder="0" allowfullscreen></iframe>
+<!-- <iframe width="560" height="315" src="https://www.youtube.com/embed/6eg5VSRqIDA" frameborder="0" allowfullscreen></iframe>
+ -->
 
 ## Todo!
 
