@@ -9,6 +9,7 @@ import tensorflow as tf
 import h5py, pickle
 import time
 import os
+from urllib import urlretrieve
 from itertools import permutations
 import matplotlib.pyplot as plt
 
@@ -50,7 +51,7 @@ def decode_ensemble_gestures(num_perfs,code):
 	gestures = []
 	for i in range(num_perfs):
 		part = code % (len(GESTURE_CODES) ** (i+1))
-		gestures.append(part / (len(GESTURE_CODES) ** i))
+		gestures.append(part // (len(GESTURE_CODES) ** i))
 	return gestures
 
 class QuartetDataManager(object):
@@ -134,7 +135,7 @@ class QuartetDataManager(object):
 		np.random.shuffle(self.dataset)
 		dataset_size = len(self.dataset)
 		batches = []
-		for i in range(dataset_size / self.batch_size):
+		for i in range(dataset_size // self.batch_size):
 			batch = self.dataset[i*self.batch_size:(i+1)*self.batch_size]
 			bx,by = zip(*batch)
 			batches.append((np.array(bx),np.array(by)))
@@ -154,6 +155,7 @@ class GestureRNN(object):
 		## Model Hyperparameters
 		num_nodes = 512
 		num_layers = 3
+		self.mode = mode
 
 		## IO Hyperparameters
 		self.num_input_performers = ensemble_size
@@ -166,8 +168,8 @@ class GestureRNN(object):
 		# Training Hyperparamters
 		learning_rate = 1e-4
 		self.run_name = self.get_run_name()
-		print("Loading", self.num_input_performers, "to", self.num_output_performers ,"GestureRNN in", mode, "mode.")
-		if mode is RNN_MODE_TRAIN:
+		print("Loading", self.num_input_performers, "to", self.num_output_performers ,"GestureRNN in", self.mode, "mode.")
+		if self.mode is RNN_MODE_TRAIN:
 			# Training Tensorsize
 			self.batch_size = 64
 			self.num_steps = 120
@@ -187,12 +189,14 @@ class GestureRNN(object):
 			with tf.name_scope('input'):
 				self.x = tf.placeholder(tf.int32,[self.batch_size,self.num_steps], name='input_placeholder')
 				self.y = tf.placeholder(tf.int32,[self.batch_size,self.num_steps], name='labels_placeholder')
-			self.embeddings = tf.get_variable('embedding_matrix', [self.num_input_classes, num_nodes])
-			self.rnn_inputs = tf.nn.embedding_lookup(self.embeddings,self.x, name="input_embedding")    
+			with tf.variable_scope('embedding'):
+				self.embeddings = tf.get_variable('emb_matrix', [self.num_input_classes, num_nodes])
+				self.rnn_inputs = tf.nn.embedding_lookup(self.embeddings,self.x, name="input_emb")    
 			# RNN section
 			with tf.name_scope('recurrentnn'):
-				self.cell = tf.contrib.rnn.LSTMCell(num_nodes,state_is_tuple=True)
-				self.cell = tf.contrib.rnn.MultiRNNCell([self.cell] * num_layers, state_is_tuple=True)
+				# self.cell = tf.contrib.rnn.LSTMCell(num_nodes,state_is_tuple=True)
+				self.cell = tf.contrib.rnn.MultiRNNCell([tf.contrib.rnn.LSTMCell(num_nodes,state_is_tuple=True) for _ in range(num_layers)])
+				# self.cell = tf.contrib.rnn.MultiRNNCell([self.cell] * num_layers, state_is_tuple=True)
 				self.init_state = self.cell.zero_state(self.batch_size,tf.float32)
 				self.rnn_outputs, self.final_state = tf.nn.dynamic_rnn(self.cell, self.rnn_inputs, initial_state=self.init_state)
 				self.rnn_outputs = tf.reshape(self.rnn_outputs,[-1,num_nodes], name = "reshape_rnn_outputs")
@@ -201,7 +205,7 @@ class GestureRNN(object):
 			with tf.variable_scope('softmax'):
 				W = tf.get_variable('W',[num_nodes,self.num_output_classes])
 				b = tf.get_variable('b',[self.num_output_classes], initializer=tf.constant_initializer(0.0))
-				self.logits = tf.matmul(self.rnn_outputs, self.W, name = "logits_mul") + self.b
+				self.logits = tf.matmul(self.rnn_outputs, W, name = "logits_mul") + b
 				self.predictions = tf.nn.softmax(self.logits, name = "predictions")
 			tf.summary.histogram("out_weights", W)
 			tf.summary.histogram("out_biases", b)
@@ -213,11 +217,11 @@ class GestureRNN(object):
 			# Saver
 			self.saver = tf.train.Saver(name = "saver")
 			# Training Operations
-			if mode is RNN_MODE_TRAIN:
+			if self.mode is RNN_MODE_TRAIN:
 				self.global_step = tf.Variable(0, name='global_step', trainable=False)
 				cost_function = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.logits, labels=self.y_reshaped, name = "cross_entropy")
 				self.loss = tf.reduce_mean(cost_function, name="loss")
-				self.optimizer = tf.train.AdamOptimizer(learning_rate)
+				optimizer = tf.train.AdamOptimizer(learning_rate)
 				self.train_op = optimizer.minimize(self.loss, global_step = self.global_step, name="train_step")
 				# Summaries
 				tf.summary.scalar("loss_summary", self.loss)
@@ -236,9 +240,9 @@ class GestureRNN(object):
 		out += time.strftime("%Y%m%d-%H%M%S")
 		return out
 		
-	def train_batch(self, batch_x,batch_y, sess):
+	def train_batch(self, batch_x, batch_y, sess):
 		"""Train the network for just one batch."""
-		if mode is not RNN_MODE_TRAIN:
+		if self.mode is not RNN_MODE_TRAIN:
 			tf.logging.info("model not initialised to train.")
 			return 0
 		feed = {self.x: batch_x, self.y: batch_y}
@@ -254,8 +258,8 @@ class GestureRNN(object):
 		epoch_steps = 0
 		total_steps = len(batches)
 		step = 0
-		for b in batches:
-			training_loss, step = self.train_batch(b, sess)
+		for batch_x, batch_y in batches:	
+			training_loss, step = self.train_batch(batch_x, batch_y, sess)
 			epoch_steps += 1
 			total_training_loss += training_loss
 			if (epoch_steps % 200 == 0):
