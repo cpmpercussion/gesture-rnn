@@ -188,7 +188,6 @@ class GestureRNN(object):
 				self.x = tf.placeholder(tf.int32,[self.batch_size,self.num_steps], name='input_placeholder')
 				self.y = tf.placeholder(tf.int32,[self.batch_size,self.num_steps], name='labels_placeholder')
 			self.embeddings = tf.get_variable('embedding_matrix', [self.num_input_classes, num_nodes])
-			self.out_embedding = tf.get_variable('out_emedding_matrix',[self.num_output_classes,num_nodes])
 			self.rnn_inputs = tf.nn.embedding_lookup(self.embeddings,self.x, name="input_embedding")    
 			# RNN section
 			self.cell = tf.contrib.rnn.LSTMCell(num_nodes,state_is_tuple=True)
