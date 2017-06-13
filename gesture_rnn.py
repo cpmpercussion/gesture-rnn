@@ -1,6 +1,7 @@
 """
 Gesture-RNN model for simulating ensemble interaction on touch-screens.
 """
+from __future__ import division
 from __future__ import print_function
 import numpy as np
 import pandas as pd
@@ -144,6 +145,7 @@ RNN_MODE_RUN = 'run'
 ENSEMBLE_SIZE_QUARTET = 4
 
 class GestureRNN(object):
+
 	def __init__(self, mode = RNN_MODE_TRAIN, ensemble_size = 4):
 		"""
 		Initialize GestureRNN model. Use "mode = 'run'" for evaluation graph 
@@ -162,11 +164,9 @@ class GestureRNN(object):
 		self.num_output_classes = self.vocabulary_size ** self.num_output_performers
 		
 		# Training Hyperparamters
-		self.global_step = 0
 		learning_rate = 1e-4
-
+		self.run_name = self.get_run_name()
 		print("Loading", self.num_input_performers, "to", self.num_output_performers ,"GestureRNN in", mode, "mode.")
-
 		if mode is RNN_MODE_TRAIN:
 			# Training Tensorsize
 			self.batch_size = 64
@@ -190,74 +190,98 @@ class GestureRNN(object):
 			self.embeddings = tf.get_variable('embedding_matrix', [self.num_input_classes, num_nodes])
 			self.rnn_inputs = tf.nn.embedding_lookup(self.embeddings,self.x, name="input_embedding")    
 			# RNN section
-			self.cell = tf.contrib.rnn.LSTMCell(num_nodes,state_is_tuple=True)
-			self.cell = tf.contrib.rnn.MultiRNNCell([self.cell] * num_layers, state_is_tuple=True)
-			self.init_state = self.cell.zero_state(self.batch_size,tf.float32)
-			self.rnn_outputs, self.final_state = tf.nn.dynamic_rnn(self.cell, self.rnn_inputs, initial_state=self.init_state)
+			with tf.name_scope('recurrentnn'):
+				self.cell = tf.contrib.rnn.LSTMCell(num_nodes,state_is_tuple=True)
+				self.cell = tf.contrib.rnn.MultiRNNCell([self.cell] * num_layers, state_is_tuple=True)
+				self.init_state = self.cell.zero_state(self.batch_size,tf.float32)
+				self.rnn_outputs, self.final_state = tf.nn.dynamic_rnn(self.cell, self.rnn_inputs, initial_state=self.init_state)
+				self.rnn_outputs = tf.reshape(self.rnn_outputs,[-1,num_nodes], name = "reshape_rnn_outputs")
+
 			# Fully-Connected Softmax Section
 			with tf.variable_scope('softmax'):
-				self.W = tf.get_variable('W',[num_nodes,self.num_output_classes])
-				self.b = tf.get_variable('b',[self.num_output_classes], initializer=tf.constant_initializer(0.0))
-			self.rnn_outputs = tf.reshape(self.rnn_outputs,[-1,num_nodes], name = "reshape_rnn_outputs")
-			self.y_reshaped = tf.reshape(self.y,[-1], name = "reshape_labels")
-			self.logits = tf.matmul(self.rnn_outputs, self.W, name = "logits_mul") + self.b
-			# Output Operations
-			self.predictions = tf.nn.softmax(self.logits, name = "predictions")
-			self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.logits, labels=self.y_reshaped, name = "cross_entropy"), name="loss")
-			self.train_optimizer = tf.train.AdamOptimizer(learning_rate).minimize(self.loss, name="train_step")
-			# Summaries
-			tf.summary.scalar("loss_summary", self.loss)
-			self.summaries = tf.summary.merge_all()
+				W = tf.get_variable('W',[num_nodes,self.num_output_classes])
+				b = tf.get_variable('b',[self.num_output_classes], initializer=tf.constant_initializer(0.0))
+				self.logits = tf.matmul(self.rnn_outputs, self.W, name = "logits_mul") + self.b
+				self.predictions = tf.nn.softmax(self.logits, name = "predictions")
+			tf.summary.histogram("out_weights", W)
+			tf.summary.histogram("out_biases", b)
+			tf.summary.histogram("out_logits", self.logits)
+
+			with tf.variable_scope('labels'):
+				# reshape labels to have shape (batch_size * num_steps, )
+				self.y_reshaped = tf.reshape(self.y,[-1], name = "reshape_labels")
 			# Saver
 			self.saver = tf.train.Saver(name = "saver")
-		self.writer = tf.summary.FileWriter(LOG_PATH, graph=self.graph)
+			# Training Operations
+			if mode is RNN_MODE_TRAIN:
+				self.global_step = tf.Variable(0, name='global_step', trainable=False)
+				cost_function = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.logits, labels=self.y_reshaped, name = "cross_entropy")
+				self.loss = tf.reduce_mean(cost_function, name="loss")
+				self.optimizer = tf.train.AdamOptimizer(learning_rate)
+				self.train_op = optimizer.minimize(self.loss, global_step = self.global_step, name="train_step")
+				# Summaries
+				tf.summary.scalar("loss_summary", self.loss)
+			self.summaries = tf.summary.merge_all()
+
+		self.writer = tf.summary.FileWriter(LOG_PATH  + self.run_name + '/', graph=self.graph)
+		train_vars_count = np.sum([np.prod(v.get_shape().as_list()) for v in tf.trainable_variables()])
+		tf.logging.info("done initialising: %s vars: %d", self.model_name(),train_vars_count)
 
 	def model_name(self):
 		"""Returns the name of the present model for saving to disk"""
 		return "gesture-rnn-model-" + str(self.num_input_performers) + "to" + str(self.num_output_performers)
 
+	def get_run_name(self):
+		out = self.model_name() + "-"
+		out += time.strftime("%Y%m%d-%H%M%S")
+		return out
+		
 	def train_batch(self, batch_x,batch_y, sess):
 		"""Train the network for just one batch."""
+		if mode is not RNN_MODE_TRAIN:
+			tf.logging.info("model not initialised to train.")
+			return 0
 		feed = {self.x: batch_x, self.y: batch_y}
 		if self.training_state is not None:
 			feed[self.init_state] = self.training_state
-		training_loss_current, self.training_state, _, summary = sess.run([self.loss,self.final_state,self.train_optimizer,self.summaries],feed_dict=feed)
-		self.global_step += 1
-		self.writer.add_summary(summary, self.global_step)
-		return training_loss_current
+		training_loss_current, self.training_state, _, summary, step = sess.run([self.loss,self.final_state,self.train_op,self.summaries,self.global_step],feed_dict=feed)
+		self.writer.add_summary(summary, step)
+		return training_loss_current, step
 
 	def train_epoch(self, batches, sess):
-		"""Code for training one epoch of training data"""
+		"""Train the network on one epoch of training data."""
 		total_training_loss = 0
-		steps = 0
+		epoch_steps = 0
 		total_steps = len(batches)
-		self.training_state = None
-		for batch_x, batch_y in batches:	
-			training_loss = self.train_batch(batch_x,batch_y,sess)
-			steps += 1
+		step = 0
+		for b in batches:
+			training_loss, step = self.train_batch(b, sess)
+			epoch_steps += 1
 			total_training_loss += training_loss
-			if (steps % 500 == 0):
-				print("Trained batch:", str(steps), "of", str(total_steps), "loss was:", str(training_loss))
-		return total_training_loss/steps
+			if (epoch_steps % 200 == 0):
+				tf.logging.info("trained batch: %d of %d; loss was %f", epoch_steps, total_steps, training_loss)
+		return (total_training_loss/epoch_steps), step
 
 	def train(self, data_manager, num_epochs, saving=True):
 		"""Train the network for the a number of epochs."""
-		# often 30
 		self.num_epochs = num_epochs
-		print("Going to train: " + self.model_name())
+		tf.logging.info("going to train: %s", self.model_name())
 		start_time = time.time()
 		training_losses = []
+		step = 0
 		with tf.Session() as sess:
 			sess.run(tf.global_variables_initializer())
 			for i in range(num_epochs):
 				batches = data_manager.next_epoch()
-				print("Starting Epoch", str(i), "of", str(self.num_epochs))
-				epoch_average_loss = self.train_epoch(batches,sess)
+				epoch_average_loss, step = self.train_epoch(batches,sess)
 				training_losses.append(epoch_average_loss)
-				print("Trained Epoch", str(i), "of", str(self.num_epochs))
+				tf.logging.info("trained epoch %d of %d", i, self.num_epochs)
 				if saving:
-					self.saver.save(sess, LOG_PATH + "/" + self.model_name() + ".ckpt", i)
+					checkpoint_path = LOG_PATH + self.run_name + '/' + self.model_name() + ".ckpt"
+					tf.logging.info('saving model %s, global_step %d.', checkpoint_path, step)
+					self.saver.save(sess, checkpoint_path, global_step=step)
 			if saving:
+				tf.logging.info('saving model %s.', self.model_name())
 				self.saver.save(sess,self.model_name())
 		print("It took ", time.time() - start_time, " to train the network.")
 
@@ -324,18 +348,18 @@ def test_evaluation(num_trials = 100):
 	sess.close()
 
 def plot_gesture_only_score(plot_title, gestures):
-    """ Plots a gesture score of gestures only """
-    idx = gestures.index
-    plt.style.use('ggplot')
-    # ax = plt.figure(figsize=(35,10),frameon=False,tight_layout=True).add_subplot(111)
-    ax = plt.figure(figsize=(14, 4), frameon=False, tight_layout=True).add_subplot(111)
-    ax.yaxis.grid()
-    plt.ylim(-0.5, 8.5)
-    plt.yticks(np.arange(9), ['n', 'ft', 'st', 'fs', 'fsa', 'vss', 'bs', 'ss', 'c'])
-    for n in gestures.columns:
-        plt.plot(gestures.index, gestures[n], '-', label=n)
-    plt.savefig(plot_title + '.pdf', dpi=150, format="pdf")
-    
+	""" Plots a gesture score of gestures only """
+	idx = gestures.index
+	plt.style.use('ggplot')
+	# ax = plt.figure(figsize=(35,10),frameon=False,tight_layout=True).add_subplot(111)
+	ax = plt.figure(figsize=(14, 4), frameon=False, tight_layout=True).add_subplot(111)
+	ax.yaxis.grid()
+	plt.ylim(-0.5, 8.5)
+	plt.yticks(np.arange(9), ['n', 'ft', 'st', 'fs', 'fsa', 'vss', 'bs', 'ss', 'c'])
+	for n in gestures.columns:
+		plt.plot(gestures.index, gestures[n], '-', label=n)
+	plt.savefig(plot_title + '.pdf', dpi=150, format="pdf")
+	
 def generate_a_fake_performance(num_performances = 1):
 	q = QuartetDataManager(120,64)
 	individual_improvisations = q.setup_test_data()
@@ -399,4 +423,4 @@ def main(_):
 		test_training()
 
 if __name__ == "__main__":
-    tf.app.run(main=main)
+	tf.app.run(main=main)
