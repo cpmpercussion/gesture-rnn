@@ -154,14 +154,14 @@ ENSEMBLE_SIZE_QUARTET = 4
 
 class GestureRNN(object):
 
-    def __init__(self, mode=RNN_MODE_TRAIN, ensemble_size=4):
+    def __init__(self, mode=RNN_MODE_TRAIN, ensemble_size=4, num_nodes=512, num_layers=3):
         """
         Initialize GestureRNN model. Use "mode = 'run'" for evaluation graph
         and "mode = "train" for training graph.
         """
         # Model Hyperparameters
-        num_nodes = 512
-        num_layers = 3
+        self.num_nodes = num_nodes
+        self.num_layers = num_layers
         self.mode = mode
 
         # IO Hyperparameters
@@ -173,9 +173,9 @@ class GestureRNN(object):
         self.num_output_classes = self.vocabulary_size ** self.num_output_performers
 
         # Training Hyperparamters
-        learning_rate = 1e-4
+        self.learning_rate = 1e-4
         self.run_name = self.get_run_name()
-        print("Loading", self.num_input_performers, "to", self.num_output_performers, "GestureRNN in", self.mode, "mode.")
+        tf.logging.info("Loading %d to %d Gesture-RNN in %s mode with %d nodes in %d layers.", self.num_input_performers, self.num_output_performers, self.mode, self.num_nodes, self.num_layers)
         if self.mode is RNN_MODE_TRAIN:
             # Training Tensorsize
             self.batch_size = 64
@@ -196,42 +196,39 @@ class GestureRNN(object):
             with tf.name_scope('input'):
                 self.x = tf.placeholder(tf.int32, [self.batch_size, self.num_steps], name='input_placeholder')
                 self.y = tf.placeholder(tf.int32, [self.batch_size, self.num_steps], name='labels_placeholder')
+                # reshape labels to have shape (batch_size * num_steps, )
+                self.y_reshaped = tf.reshape(self.y, [-1], name="reshape_labels")
             with tf.variable_scope('embedding'):
-                self.embeddings = tf.get_variable('emb_matrix', [self.num_input_classes, num_nodes])
+                self.embeddings = tf.get_variable('emb_matrix', [self.num_input_classes, self.num_nodes])
                 self.rnn_inputs = tf.nn.embedding_lookup(self.embeddings, self.x, name="input_emb")
             # RNN section
-            with tf.name_scope('recurrentnn'):
-                # self.cell = tf.contrib.rnn.LSTMCell(num_nodes,state_is_tuple=True)
-                self.cell = tf.contrib.rnn.MultiRNNCell([tf.contrib.rnn.LSTMCell(num_nodes, state_is_tuple=True) for _ in range(num_layers)])
-                # self.cell = tf.contrib.rnn.MultiRNNCell([self.cell] * num_layers, state_is_tuple=True)
+            with tf.variable_scope('rnn'):
+                rnn_cells = [tf.contrib.rnn.LSTMCell(self.num_nodes, state_is_tuple=True) for _ in range(self.num_layers)]
+                self.cell = tf.contrib.rnn.MultiRNNCell(rnn_cells)
                 self.init_state = self.cell.zero_state(self.batch_size, tf.float32)
                 self.rnn_outputs, self.final_state = tf.nn.dynamic_rnn(self.cell, self.rnn_inputs, initial_state=self.init_state)
-                self.rnn_outputs = tf.reshape(self.rnn_outputs, [-1, num_nodes], name="reshape_rnn_outputs")
+                self.rnn_outputs = tf.reshape(self.rnn_outputs, [-1, self.num_nodes], name="reshape_rnn_outputs")
 
             # Fully-Connected Softmax Section
-            with tf.variable_scope('softmax'):
-                W = tf.get_variable('W', [num_nodes, self.num_output_classes])
+            with tf.variable_scope('rnn_to_cat'):
+                W = tf.get_variable('W', [self.num_nodes, self.num_output_classes])
                 b = tf.get_variable('b', [self.num_output_classes], initializer=tf.constant_initializer(0.0))
                 self.logits = tf.matmul(self.rnn_outputs, W, name="logits_mul") + b
-                self.predictions = tf.nn.softmax(self.logits, name="predictions")
+            self.predictions = tf.nn.softmax(self.logits, name="softmax")
             tf.summary.histogram("out_weights", W)
             tf.summary.histogram("out_biases", b)
             tf.summary.histogram("out_logits", self.logits)
 
-            with tf.variable_scope('labels'):
-                # reshape labels to have shape (batch_size * num_steps, )
-                self.y_reshaped = tf.reshape(self.y, [-1], name="reshape_labels")
-            # Saver
             self.saver = tf.train.Saver(name="saver")
             # Training Operations
             if self.mode is RNN_MODE_TRAIN:
-                self.global_step = tf.Variable(0, name='global_step', trainable=False)
                 cost_function = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.logits, labels=self.y_reshaped, name="cross_entropy")
                 self.loss = tf.reduce_mean(cost_function, name="loss")
-                optimizer = tf.train.AdamOptimizer(learning_rate)
-                self.train_op = optimizer.minimize(self.loss, global_step=self.global_step, name="train_step")
-                # Summaries
                 tf.summary.scalar("loss_summary", self.loss)
+                with tf.name_scope('training'):
+                    self.global_step = tf.Variable(0, name='global_step', trainable=False)
+                    optimizer = tf.train.AdamOptimizer(self.learning_rate)
+                    self.train_op = optimizer.minimize(self.loss, global_step=self.global_step, name="train_op")
             self.summaries = tf.summary.merge_all()
 
         self.writer = tf.summary.FileWriter(LOG_PATH + self.run_name + '/', graph=self.graph)
@@ -240,7 +237,8 @@ class GestureRNN(object):
 
     def model_name(self):
         """Returns the name of the present model for saving to disk"""
-        return "gesture-rnn-model-" + str(self.num_input_performers) + "to" + str(self.num_output_performers)
+        name = "gesture-rnn-%dto%d-%dn%dl" % (self.num_input_performers, self.num_output_performers, self.num_nodes, self.num_layers)
+        return name
 
     def get_run_name(self):
         """Generates a time-stampted model name for marking runs"""
@@ -392,25 +390,25 @@ def generate_a_fake_performance(num_performances=1):
         plot_gesture_only_score(plot_name, perf)
 
 
-def train_model(epochs, model='quartet'):
+def train_model(epochs, saving=True, model='quartet', num_nodes=512):
     """ Train the model for a number of epochs. """
     # Presently, only the quartet model is working.
     if model is 'quartet':
-        train_quartet(epochs)
+        train_quartet(epochs=epochs, num_nodes=512)
     elif model is 'duo':
-        train_duo(epochs)
+        train_duo(epochs=epochs, num_nodes=512)
 
 
-def train_quartet(epochs=30):
+def train_quartet(epochs=30, num_nodes=512):
     """ Train the model for a number of epochs. """
     tf.set_random_seed(2345)
     q = QuartetDataManager(120, 64)
-    g = GestureRNN(mode="train")
+    g = GestureRNN(mode="train", num_nodes=num_nodes)
     g.train(q, epochs)
     print("Done training phew.")
 
 
-def train_duo(epochs=30):
+def train_duo(epochs=30, num_nodes=512):
     """ Train the model for a number of epochs. """
     tf.set_random_seed(2345)  # should this be removed?
     # d = DuetDataManager(120,64)
@@ -435,7 +433,7 @@ def test_duo_eval(num_trials=100):
 def main(_):
     """ Command line accessible functions. """
     if FLAGS.train:
-        train_model(epochs=FLAGS.epochs, saving=True)
+        train_model(epochs=FLAGS.epochs, saving=True, model='quartet')
     if FLAGS.generate:
         generate_a_fake_performance(num_performances=FLAGS.num_perfs)
     if FLAGS.test_eval:
