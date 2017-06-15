@@ -13,6 +13,7 @@ import os
 from urllib import urlretrieve
 from itertools import permutations
 import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
 
 # Int values for Gesture codes.
 NUMBER_GESTURES = 9
@@ -28,8 +29,11 @@ GESTURE_CODES = {
     'C': 8}
 
 # Evaluating Network
-MODEL_DIR = "/Users/charles/src/ensemble-performance-deep-models/"
-LOG_PATH = "/tmp/tensorflow/"
+MODEL_DIR = ""
+LOG_PATH = "output-logs/"  # "/tmp/tensorflow/"
+NP_RANDOM_STATE = 6789
+TF_RANDOM_STATE = 2345
+SPLIT_RANDOM_STATE = 2468
 
 # Flags
 tf.app.flags.DEFINE_boolean("train", False, "Train the network and save the model.")
@@ -62,10 +66,11 @@ def decode_ensemble_gestures(num_perfs, code):
 class QuartetDataManager(object):
     """Manages data from metatone quartet performances and generates epochs"""
 
-    def __init__(self, num_steps, batch_size):
+    def __init__(self, num_steps, batch_size, train_split=0.95):
         """Load Metatone Corpus and Create Example Data"""
         self.num_steps = num_steps
         self.batch_size = batch_size
+        self.train_split = train_split
         self.examples_file = "MetatoneQuartetExamples-" + str(self.num_steps) + "steps" + ".h5"
 
         # Make sure corpus is available.
@@ -89,13 +94,16 @@ class QuartetDataManager(object):
             print("File exists, loading.")
             with h5py.File(self.examples_file, 'r') as data_file:
                 self.dataset = data_file['examples'][:]
+                self.validation_set = data_file['validation'][:]
         else:
             print("File doesn't exist, creating.")
-            self.dataset = self.setup_training_examples()
+            self.dataset, self.validation_set = self.setup_training_examples()
             print("Created Training Examples, now saving to h5 file.")
             self.dataset = np.array(self.dataset)
+            self.validation_set = np.array(self.validation_set)
             with h5py.File(self.examples_file, 'w') as data_file:
                 data_file.create_dataset('examples', data=self.dataset)
+                data_file.create_dataset('validation', data= self.validation_set)
         print("Loaded", str(len(self.dataset)), "Training Examples.")
 
     def setup_test_data(self):
@@ -131,9 +139,15 @@ class QuartetDataManager(object):
                         # x = zip(lead,*(ens_pre.T)) # test just show the gestures
                         imp_xs.append(x)  # append the inputs
                         imp_ys.append(y)  # append the outputs
-        print("Total Training Examples: " + str(len(imp_xs)))
-        print("Total Training Labels: " + str(len(imp_ys)))
-        return zip(imp_xs, imp_ys)
+        print("Total Examples:", len(imp_xs))
+        print("Total Labels:", len(imp_ys))
+        print("Splitting train set with prop:", self.train_split)
+        X_train, X_test, y_train, y_test = train_test_split(imp_xs, imp_ys, train_size=self.train_split, random_state=SPLIT_RANDOM_STATE)
+        ex_train = zip(X_train, y_train)
+        ex_test = zip(X_test, y_test)
+        print("Training Set:", str(len(ex_train)))
+        print("Validation Set:", str(len(ex_test)))
+        return ex_train, ex_test
 
     def next_epoch(self):
         """Return an epoch of batches of shuffled examples."""
@@ -154,7 +168,7 @@ ENSEMBLE_SIZE_QUARTET = 4
 
 class GestureRNN(object):
 
-    def __init__(self, mode=RNN_MODE_TRAIN, ensemble_size=4, num_nodes=512, num_layers=3):
+    def __init__(self, mode=RNN_MODE_TRAIN, ensemble_size=4, num_nodes=512, num_layers=3, testing=False):
         """
         Initialize GestureRNN model. Use "mode = 'run'" for evaluation graph
         and "mode = "train" for training graph.
@@ -163,6 +177,7 @@ class GestureRNN(object):
         self.num_nodes = num_nodes
         self.num_layers = num_layers
         self.mode = mode
+        self.testing = testing
 
         # IO Hyperparameters
         self.num_input_performers = ensemble_size
@@ -219,7 +234,7 @@ class GestureRNN(object):
             tf.summary.histogram("out_biases", b)
             tf.summary.histogram("out_logits", self.logits)
 
-            self.saver = tf.train.Saver(name="saver")
+            self.saver = tf.train.Saver(name="saver", keep_checkpoint_every_n_hours=1)
             # Training Operations
             if self.mode is RNN_MODE_TRAIN:
                 cost_function = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.logits, labels=self.y_reshaped, name="cross_entropy")
@@ -229,6 +244,15 @@ class GestureRNN(object):
                     self.global_step = tf.Variable(0, name='global_step', trainable=False)
                     optimizer = tf.train.AdamOptimizer(self.learning_rate)
                     self.train_op = optimizer.minimize(self.loss, global_step=self.global_step, name="train_op")
+            if self.testing:
+                with tf.name_scope('accuracy'):
+                    predicted_labels = tf.cast(tf.argmax(self.predictions, 1), tf.int32)
+                    print(predicted_labels.shape)
+                    print(self.y_reshaped.shape)
+                    correct_predictions = tf.equal(predicted_labels, self.y_reshaped)
+                    self.accuracy = tf.reduce_mean(tf.cast(correct_predictions, tf.float32))
+                tf.summary.scalar("train_accuracy", self.accuracy)
+
             self.summaries = tf.summary.merge_all()
 
         self.writer = tf.summary.FileWriter(LOG_PATH + self.run_name + '/', graph=self.graph)
@@ -290,7 +314,7 @@ class GestureRNN(object):
                 tf.logging.info("trained epoch %d of %d", i, self.num_epochs)
                 if saving:
                     # Save a checkpoint
-                    checkpoint_path = LOG_PATH + self.run_name + '/' + self.model_name() + ".ckpt"
+                    checkpoint_path = LOG_PATH + self.run_name + '/' + self.model_name()
                     tf.logging.info('saving model %s, global_step %d.', checkpoint_path, step)
                     self.saver.save(sess, checkpoint_path, global_step=step)
             if saving:
@@ -401,6 +425,7 @@ def train_model(epochs, saving=True, model='quartet', num_nodes=512):
 
 def train_quartet(epochs=30, num_nodes=512):
     """ Train the model for a number of epochs. """
+    np.random.seed(6789)
     tf.set_random_seed(2345)
     q = QuartetDataManager(120, 64)
     g = GestureRNN(mode="train", num_nodes=num_nodes)
@@ -440,6 +465,15 @@ def main(_):
         test_evaluation()
     if FLAGS.test_train:
         test_training()
+
+
+def training_experiment():
+    """ 20170615: training experiment to create 3 models with different node sizes """
+    train_quartet(epochs=50, num_nodes=64)
+    train_quartet(epochs=50, num_nodes=128)
+    train_quartet(epochs=50, num_nodes=256)
+    train_quartet(epochs=50, num_nodes=512)
+
 
 if __name__ == "__main__":
     tf.app.run(main=main)
