@@ -10,3 +10,4 @@
 *.index
 
 *.meta
+output-logs/*
