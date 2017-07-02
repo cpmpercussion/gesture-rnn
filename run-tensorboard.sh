@@ -1,3 +1,3 @@
 #!/bin/bash
-tensorboard --logdir=run1:/tmp/tensorflow/ --port 6006
+tensorboard --logdir=output-logs --port 6006
 

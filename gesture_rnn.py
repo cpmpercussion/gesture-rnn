@@ -329,6 +329,22 @@ class GestureRNN(object):
         self.saver.restore(sess, MODEL_DIR + self.model_name())
         self.state = None
 
+    def sample_predictions(self, predictions, temperature):
+        """ Samples a set of predictions modified by a temperature value.
+        With temperature = 1.0, predictions are unchanged, temperature = 0
+        corresponds to a uniform distribution, temperature high tends towards
+        argmax.
+        """
+        p = np.squeeze(predictions)  # categorical probabilities
+        # temperature adjustment
+        p = np.log(p) / temperature
+        p -= p.max()
+        p = np.exp(p)
+        p /= p.sum()
+        # sampling
+        output = np.random.choice(self.num_output_classes, 1, p=p)[0]  # sample probability distribution
+        return output
+
     def generate_gestures(self, lead_player, prev_ensemble, sess):
         """ Evaluates the network once for a lead player and previous ensemble gestures.
         Returns the current ensemble gestures. The network state is preserved in between
@@ -340,7 +356,7 @@ class GestureRNN(object):
         else:
             feed_dict = {self.x: [[encode_ensemble_gestures(gesture_inputs)]]}
         preds, self.state = sess.run([self.predictions, self.final_state], feed_dict=feed_dict)
-        output_step = np.random.choice(self.num_output_classes, 1, p=np.squeeze(preds))[0]  # choose the output step
+        output_step = self.sample_predictions(preds, 0.5)  # sampling with temperature adjustment
         output_gestures = decode_ensemble_gestures(self.num_output_performers, output_step)
         return output_gestures
 
