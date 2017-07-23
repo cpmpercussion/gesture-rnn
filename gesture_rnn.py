@@ -42,6 +42,7 @@ tf.app.flags.DEFINE_boolean("generate", False, "Generate some sample test output
 tf.app.flags.DEFINE_integer("num_perfs", 10, "Number of sample performances to generate.")
 tf.app.flags.DEFINE_boolean("test_eval", False, "Test generation of a few performance steps.")
 tf.app.flags.DEFINE_boolean("test_train", False, "Test training of two epochs (without saving the model).")
+tf.app.flags.DEFINE_boolean("replicate_generate", False, "Generate a number of samples from same input.")
 FLAGS = tf.app.flags.FLAGS
 
 
@@ -164,6 +165,7 @@ class QuartetDataManager(object):
 RNN_MODE_TRAIN = 'train'
 RNN_MODE_RUN = 'run'
 ENSEMBLE_SIZE_QUARTET = 4
+ENSEMBLE_SIZE_DUO = 2
 
 
 class GestureRNN(object):
@@ -254,7 +256,6 @@ class GestureRNN(object):
                 tf.summary.scalar("train_accuracy", self.accuracy)
 
             self.summaries = tf.summary.merge_all()
-
         self.writer = tf.summary.FileWriter(LOG_PATH + self.run_name + '/', graph=self.graph)
         train_vars_count = np.sum([np.prod(v.get_shape().as_list()) for v in tf.trainable_variables()])
         tf.logging.info("done initialising: %s vars: %d", self.model_name(), train_vars_count)
@@ -356,7 +357,7 @@ class GestureRNN(object):
         else:
             feed_dict = {self.x: [[encode_ensemble_gestures(gesture_inputs)]]}
         preds, self.state = sess.run([self.predictions, self.final_state], feed_dict=feed_dict)
-        output_step = self.sample_predictions(preds, 0.5)  # sampling with temperature adjustment
+        output_step = self.sample_predictions(preds, temperature=0.5)  # sampling with temperature adjustment
         output_gestures = decode_ensemble_gestures(self.num_output_performers, output_step)
         return output_gestures
 
@@ -430,6 +431,23 @@ def generate_a_fake_performance(num_performances=1):
         plot_gesture_only_score(plot_name, perf)
 
 
+def cherry_pick_performances(num_attempts=5):
+    """ Examine the model performance by generating ensemble responses
+    multiple times for one performance."""
+    q = QuartetDataManager(120, 64)
+    individual_improvisations = q.setup_test_data()
+    print("Number of performances for testing: ", len(individual_improvisations))
+    player_one = np.random.choice(individual_improvisations)
+    # Do the math.
+    g = GestureRNN(mode="run")
+    for i in range(num_attempts):
+        # player_one = player_one.tolist()
+        with tf.Session() as sess:
+            perf = g.generate_performance(player_one, sess)
+        plot_name = g.model_name() + "-sameperf-" + str(i)
+        plot_gesture_only_score(plot_name, perf)
+
+
 def train_model(epochs, saving=True, model='quartet', num_nodes=512):
     """ Train the model for a number of epochs. """
     # Presently, only the quartet model is working.
@@ -481,6 +499,8 @@ def main(_):
         test_evaluation()
     if FLAGS.test_train:
         test_training()
+    if FLAGS.replicate_generate:
+        cherry_pick_performances(num_attempts=10)
 
 
 def training_experiment():
