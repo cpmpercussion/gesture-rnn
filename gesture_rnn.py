@@ -6,27 +6,12 @@ from __future__ import print_function
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-import h5py
-import pickle
 import time
-import os
-from urllib import urlretrieve
-from itertools import permutations
 import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split
+from metatone_gesture_encoding import encode_ensemble_gestures, decode_ensemble_gestures, GESTURE_CODES
+from quartet_data_manager import QuartetDataManager
+from duet_data_manager import DuetDataManager
 
-# Int values for Gesture codes.
-NUMBER_GESTURES = 9
-GESTURE_CODES = {
-    'N': 0,
-    'FT': 1,
-    'ST': 2,
-    'FS': 3,
-    'FSA': 4,
-    'VSS': 5,
-    'BS': 6,
-    'SS': 7,
-    'C': 8}
 
 # Evaluating Network
 MODEL_DIR = ""
@@ -45,23 +30,6 @@ tf.app.flags.DEFINE_boolean("test_train", False, "Test training of two epochs (w
 tf.app.flags.DEFINE_boolean("replicate_generate", False, "Generate a number of samples from same input.")
 FLAGS = tf.app.flags.FLAGS
 
-
-def encode_ensemble_gestures(gestures):
-    """Encode multiple natural numbers into one"""
-    encoded = 0
-    for i, g in enumerate(gestures):
-        encoded += g * (len(GESTURE_CODES) ** i)
-    return encoded
-
-
-def decode_ensemble_gestures(num_perfs, code):
-    """Decodes ensemble gestures from a single int"""
-    # TODO: Check that this works correctly now.
-    gestures = []
-    for i in range(num_perfs):
-        part = code % (len(GESTURE_CODES) ** (i + 1))
-        gestures.append(part // (len(GESTURE_CODES) ** i))
-    return gestures
 
 RNN_MODE_TRAIN = 'train'
 RNN_MODE_RUN = 'run'
@@ -360,8 +328,8 @@ def train_model(epochs, saving=True, model='quartet', num_nodes=512):
 
 def train_quartet(epochs=30, num_nodes=512):
     """ Train the model for a number of epochs. """
-    np.random.seed(6789)
-    tf.set_random_seed(2345)
+    np.random.seed(NP_RANDOM_STATE)
+    tf.set_random_seed(TF_RANDOM_STATE)
     q = QuartetDataManager(120, 64)
     g = GestureRNN(mode="train", num_nodes=num_nodes)
     g.train(q, epochs)
@@ -370,11 +338,12 @@ def train_quartet(epochs=30, num_nodes=512):
 
 def train_duo(epochs=30, num_nodes=512):
     """ Train the model for a number of epochs. """
-    tf.set_random_seed(2345)  # should this be removed?
-    # d = DuetDataManager(120,64)
+    np.random.seed(NP_RANDOM_STATE)
+    tf.set_random_seed(TF_RANDOM_STATE)  # should this be removed?
+    d = DuetDataManager(120, 64)
     g = GestureRNN(mode="train", ensemble_size=2)
-    # g.train(d,epochs)
-    print("Not implemented yet! Need to make the DuetDataManager as well!")
+    g.train(d, epochs)
+    print("Training Complete.")
 
 
 def test_duo_eval(num_trials=100):
