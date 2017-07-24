@@ -21,6 +21,7 @@ TF_RANDOM_STATE = 2345
 
 # Flags
 tf.app.flags.DEFINE_boolean("train", False, "Train the network and save the model.")
+tf.app.flags.DEFINE_boolean("train_duo", False, "Train the network in duet mode and save.")
 tf.app.flags.DEFINE_integer("epochs", 30, "Number of epochs to train for (default 30).")
 tf.app.flags.DEFINE_boolean("generate", False, "Generate some sample test output.")
 tf.app.flags.DEFINE_integer("num_perfs", 10, "Number of sample performances to generate.")
@@ -327,6 +328,7 @@ def train_model(epochs, saving=True, model='quartet', num_nodes=512):
 
 def train_quartet(epochs=30, num_nodes=512):
     """ Train the model for a number of epochs. """
+    print("Training Quartet Network")
     np.random.seed(NP_RANDOM_STATE)
     tf.set_random_seed(TF_RANDOM_STATE)
     q = QuartetDataManager(120, 64)
@@ -337,6 +339,7 @@ def train_quartet(epochs=30, num_nodes=512):
 
 def train_duo(epochs=30, num_nodes=512):
     """ Train the model for a number of epochs. """
+    print("Training Duo Network")
     np.random.seed(NP_RANDOM_STATE)
     tf.set_random_seed(TF_RANDOM_STATE)  # should this be removed?
     d = DuetDataManager(120, 64)
@@ -353,7 +356,7 @@ def test_duo_eval(num_trials=100):
     ens_gestures = [0]
     for i in range(num_trials):
         n = np.random.randint(len(GESTURE_CODES))
-        # ens_gestures = g.generate_gestures(n,ens_gestures,sess)
+        ens_gestures = g.generate_gestures(n, ens_gestures, sess)
         print("in:", n, "out:", ens_gestures)
     sess.close()
 
@@ -362,6 +365,8 @@ def main(_):
     """ Command line accessible functions. """
     if FLAGS.train:
         train_model(epochs=FLAGS.epochs, saving=True, model='quartet')
+    if FLAGS.train_duo:
+        train_model(epochs=FLAGS.epochs, saving=True, model='duo')
     if FLAGS.generate:
         generate_a_fake_performance(num_performances=FLAGS.num_perfs)
     if FLAGS.test_eval:
