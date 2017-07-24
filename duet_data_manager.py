@@ -39,7 +39,7 @@ class DuetDataManager(object):
         improvisations = self.metatone_dataset[
             (self.metatone_dataset["performance_type"] == "improvisation") &
             (self.metatone_dataset["performance_context"] != "demonstration") &
-            (self.metatone_dataset["number_performers"] == 4)]
+            (self.metatone_dataset["number_performers"] > 1)]
         gesture_data = improvisations['gestures']
         self.ensemble_improvisations = gesture_data.tolist()
         print("Number of performances in training data: ", len(self.ensemble_improvisations))
@@ -62,6 +62,7 @@ class DuetDataManager(object):
 
     def setup_test_data(self):
         """Load individual parts of non-trained data for testing."""
+        # This isn't working in the duet version - need some non-trained data.
         improvisations = self.metatone_dataset[
             (self.metatone_dataset["performance_type"] == "improvisation") &
             (self.metatone_dataset["performance_context"] != "demonstration") &
@@ -81,16 +82,16 @@ class DuetDataManager(object):
             print("Processing performance data.")
             for i in range(len(imp) - self.num_steps - 1):
                 imp_slice = imp[i:i + self.num_steps + 1]
-                for j in range(len(imp_slice.T)):
+                for j in range(len(imp_slice.T)): # Consider each member of ensemble as leader
                     lead = imp_slice[1:].T[j]  # lead gestures (post steps)
                     ensemble = imp_slice.T[np.arange(len(imp_slice.T)) != j]  # rest of the players indexed by player
-                    for ens_perm in permutations(ensemble):  # consider all permutations of the players
-                        ens_pre = np.array(ens_perm).T[:-1]  # indexed by time slice
-                        ens_post = np.array(ens_perm).T[1:]  # indexed by time slice
-                        y = map(encode_ensemble_gestures, ens_post)
-                        # y = ens_post # test just show the gestures
-                        x = map(encode_ensemble_gestures, zip(lead, *(ens_pre.T)))  # encode ensemble state
-                        # x = zip(lead,*(ens_pre.T)) # test just show the gestures
+                    for ens_mem in ensemble:  # consider each other ensemble member as a duet partner
+                        ens_pre = np.array(ens_mem).T[:-1]  # indexed by time slice, take the first num_steps
+                        ens_post = np.array(ens_mem).T[1:]  # indexed by time slice, take the last num_steps
+                        y = ens_post
+                        # print("Post:", ens_post)  # test just show the gestures
+                        x = map(encode_ensemble_gestures, zip(lead, ens_pre.T))  # encode ensemble state
+                        # print("Pre:", zip(lead, ens_pre.T))  # test just show the gestures
                         imp_xs.append(x)  # append the inputs
                         imp_ys.append(y)  # append the outputs
         print("Total Examples:", len(imp_xs))
