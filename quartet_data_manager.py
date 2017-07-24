@@ -10,41 +10,11 @@ import os
 from urllib import urlretrieve
 from itertools import permutations
 from sklearn.model_selection import train_test_split
-
-# Int values for Gesture codes.
-NUMBER_GESTURES = 9
-GESTURE_CODES = {
-    'N': 0,
-    'FT': 1,
-    'ST': 2,
-    'FS': 3,
-    'FSA': 4,
-    'VSS': 5,
-    'BS': 6,
-    'SS': 7,
-    'C': 8}
+from metatone_gesture_encoding import encode_ensemble_gestures
 
 # Evaluating Network
 NP_RANDOM_STATE = 6789
 SPLIT_RANDOM_STATE = 2468
-
-
-def encode_ensemble_gestures(gestures):
-    """Encode multiple natural numbers into one"""
-    encoded = 0
-    for i, g in enumerate(gestures):
-        encoded += g * (len(GESTURE_CODES) ** i)
-    return encoded
-
-
-def decode_ensemble_gestures(num_perfs, code):
-    """Decodes ensemble gestures from a single int"""
-    # TODO: Check that this works correctly now.
-    gestures = []
-    for i in range(num_perfs):
-        part = code % (len(GESTURE_CODES) ** (i + 1))
-        gestures.append(part // (len(GESTURE_CODES) ** i))
-    return gestures
 
 
 class QuartetDataManager(object):
@@ -87,7 +57,7 @@ class QuartetDataManager(object):
             self.validation_set = np.array(self.validation_set)
             with h5py.File(self.examples_file, 'w') as data_file:
                 data_file.create_dataset('examples', data=self.dataset)
-                data_file.create_dataset('validation', data= self.validation_set)
+                data_file.create_dataset('validation', data=self.validation_set)
         print("Loaded", str(len(self.dataset)), "Training Examples.")
 
     def setup_test_data(self):
