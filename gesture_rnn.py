@@ -255,15 +255,19 @@ def test_training(epochs=2):
     train_model(epochs, saving=False)
 
 
-def test_evaluation(num_trials=100):
+def test_evaluation(num_trials=100, model="quartet"):
     """ Test evaluation of individual gestures.
     This is the template code for real-time use in Metatone Classifier.
     """
     print("Going to run an RNN generation test.")
-    g = GestureRNN(mode=RNN_MODE_RUN)
+    if model is "duet":
+        g = GestureRNN(mode=RNN_MODE_RUN, ensemble_size=ENSEMBLE_SIZE_DUO)
+        ens_gestures = [0]
+    else:
+        g = GestureRNN(mode=RNN_MODE_RUN)
+        ens_gestures = [0, 0, 0]
     sess = tf.Session()
     g.prepare_model_for_running(sess)
-    ens_gestures = [0, 0, 0]
     for i in range(num_trials):
         n = np.random.randint(len(GESTURE_CODES))
         ens_gestures = g.generate_gestures(n, ens_gestures, sess)
@@ -284,13 +288,14 @@ def plot_gesture_only_score(plot_title, gestures):
     plt.savefig(plot_title + '.pdf', dpi=150, format="pdf")
 
 
-def generate_a_fake_performance(num_performances=1):
+def generate_a_fake_performance(num_performances=1, model="quartet"):
     q = QuartetDataManager(120, 64)
     individual_improvisations = q.setup_test_data()
-
     print("Number of performances for testing: ", len(individual_improvisations))
-    # Do the math.
-    g = GestureRNN(mode="run")
+    if model is "duet":
+        g = GestureRNN(mode="run", ensemble_size=ENSEMBLE_SIZE_DUO)
+    else:
+        g = GestureRNN(mode="run")
     for i in range(num_performances):
         player_one = np.random.choice(individual_improvisations)
         player_one = player_one.tolist()
@@ -300,15 +305,17 @@ def generate_a_fake_performance(num_performances=1):
         plot_gesture_only_score(plot_name, perf)
 
 
-def cherry_pick_performances(num_attempts=5):
+def cherry_pick_performances(num_attempts=5, model="quartet"):
     """ Examine the model performance by generating ensemble responses
     multiple times for one performance."""
     q = QuartetDataManager(120, 64)
     individual_improvisations = q.setup_test_data()
     print("Number of performances for testing: ", len(individual_improvisations))
     player_one = np.random.choice(individual_improvisations)
-    # Do the math.
-    g = GestureRNN(mode="run")
+    if model is "duet":
+        g = GestureRNN(mode="run", ensemble_size=ENSEMBLE_SIZE_DUO)
+    else:
+        g = GestureRNN(mode="run")
     for i in range(num_attempts):
         # player_one = player_one.tolist()
         with tf.Session() as sess:
