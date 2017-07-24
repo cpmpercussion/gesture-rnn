@@ -18,7 +18,6 @@ MODEL_DIR = ""
 LOG_PATH = "output-logs/"  # "/tmp/tensorflow/"
 NP_RANDOM_STATE = 6789
 TF_RANDOM_STATE = 2345
-SPLIT_RANDOM_STATE = 2468
 
 # Flags
 tf.app.flags.DEFINE_boolean("train", False, "Train the network and save the model.")
