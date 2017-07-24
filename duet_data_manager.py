@@ -1,20 +1,15 @@
 """
-Loads data from Metatone Duet Performances and 
+Loads data from Metatone Duet Performances and generates epochs, batches, and sequences.
 """
 from __future__ import division
 from __future__ import print_function
 import numpy as np
-import pandas as pd
-import tensorflow as tf
 import h5py
 import pickle
-import time
 import os
 from urllib import urlretrieve
 from itertools import permutations
-import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
-
 
 # Int values for Gesture codes.
 NUMBER_GESTURES = 9
