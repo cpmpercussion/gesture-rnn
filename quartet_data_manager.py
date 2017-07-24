@@ -1,5 +1,5 @@
 """
-Loads data from Metatone Duet Performances and generates epochs, batches, and sequences.
+Loads data from Metatone Quartet Performances and generates epochs, batches, and sequences.
 """
 from __future__ import division
 from __future__ import print_function
@@ -47,15 +47,15 @@ def decode_ensemble_gestures(num_perfs, code):
     return gestures
 
 
-class DuetDataManager(object):
-    """Manages data from metatone duet performances and generates epochs"""
+class QuartetDataManager(object):
+    """Manages data from metatone quartet performances and generates epochs"""
 
     def __init__(self, num_steps, batch_size, train_split=0.95):
         """Load Metatone Corpus and Create Example Data"""
         self.num_steps = num_steps
         self.batch_size = batch_size
         self.train_split = train_split
-        self.examples_file = "MetatoneDuetExamples-" + str(self.num_steps) + "steps" + ".h5"
+        self.examples_file = "MetatoneQuartetExamples-" + str(self.num_steps) + "steps" + ".h5"
 
         # Make sure corpus is available.
         URL = "https://github.com/anucc/metatone-analysis/raw/master/metadata/"
@@ -87,7 +87,7 @@ class DuetDataManager(object):
             self.validation_set = np.array(self.validation_set)
             with h5py.File(self.examples_file, 'w') as data_file:
                 data_file.create_dataset('examples', data=self.dataset)
-                data_file.create_dataset('validation', data=self.validation_set)
+                data_file.create_dataset('validation', data= self.validation_set)
         print("Loaded", str(len(self.dataset)), "Training Examples.")
 
     def setup_test_data(self):
