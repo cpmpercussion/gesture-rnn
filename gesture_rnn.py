@@ -20,8 +20,8 @@ NP_RANDOM_STATE = 6789
 TF_RANDOM_STATE = 2345
 
 # Flags
+tf.app.flags.DEFINE_boolean("duet", False, "Set training and evaluation to duet mode.")
 tf.app.flags.DEFINE_boolean("train", False, "Train the network and save the model.")
-tf.app.flags.DEFINE_boolean("train_duo", False, "Train the network in duet mode and save.")
 tf.app.flags.DEFINE_integer("epochs", 30, "Number of epochs to train for (default 30).")
 tf.app.flags.DEFINE_boolean("generate", False, "Generate some sample test output.")
 tf.app.flags.DEFINE_integer("num_perfs", 10, "Number of sample performances to generate.")
@@ -34,7 +34,9 @@ FLAGS = tf.app.flags.FLAGS
 RNN_MODE_TRAIN = 'train'
 RNN_MODE_RUN = 'run'
 ENSEMBLE_SIZE_QUARTET = 4
-ENSEMBLE_SIZE_DUO = 2
+ENSEMBLE_SIZE_DUET = 2
+MODEL_DUET = 'duet'
+MODEL_QUARTET = 'quartet'
 
 
 class GestureRNN(object):
@@ -250,18 +252,18 @@ class GestureRNN(object):
         return generated_performance
 
 
-def test_training(epochs=2):
+def test_training(epochs=1, model=MODEL_QUARTET):
     """ Test Training. """
-    train_model(epochs, saving=False)
+    train_model(epochs, saving=False, model=model)
 
 
-def test_evaluation(num_trials=100, model="quartet"):
+def test_evaluation(num_trials=100, model=MODEL_QUARTET):
     """ Test evaluation of individual gestures.
     This is the template code for real-time use in Metatone Classifier.
     """
     print("Going to run an RNN generation test.")
-    if model is "duet":
-        g = GestureRNN(mode=RNN_MODE_RUN, ensemble_size=ENSEMBLE_SIZE_DUO)
+    if model is MODEL_DUET:
+        g = GestureRNN(mode=RNN_MODE_RUN, ensemble_size=ENSEMBLE_SIZE_DUET)
         ens_gestures = [0]
     else:
         g = GestureRNN(mode=RNN_MODE_RUN)
@@ -288,12 +290,12 @@ def plot_gesture_only_score(plot_title, gestures):
     plt.savefig(plot_title + '.pdf', dpi=150, format="pdf")
 
 
-def generate_a_fake_performance(num_performances=1, model="quartet"):
+def generate_a_fake_performance(num_performances=1, model=MODEL_QUARTET):
     q = QuartetDataManager(120, 64)
     individual_improvisations = q.setup_test_data()
     print("Number of performances for testing: ", len(individual_improvisations))
     if model is "duet":
-        g = GestureRNN(mode="run", ensemble_size=ENSEMBLE_SIZE_DUO)
+        g = GestureRNN(mode="run", ensemble_size=ENSEMBLE_SIZE_DUET)
     else:
         g = GestureRNN(mode="run")
     for i in range(num_performances):
@@ -305,15 +307,15 @@ def generate_a_fake_performance(num_performances=1, model="quartet"):
         plot_gesture_only_score(plot_name, perf)
 
 
-def cherry_pick_performances(num_attempts=5, model="quartet"):
+def cherry_pick_performances(num_attempts=5, model=MODEL_QUARTET):
     """ Examine the model performance by generating ensemble responses
     multiple times for one performance."""
     q = QuartetDataManager(120, 64)
     individual_improvisations = q.setup_test_data()
     print("Number of performances for testing: ", len(individual_improvisations))
     player_one = np.random.choice(individual_improvisations)
-    if model is "duet":
-        g = GestureRNN(mode="run", ensemble_size=ENSEMBLE_SIZE_DUO)
+    if model is MODEL_DUET:
+        g = GestureRNN(mode="run", ensemble_size=ENSEMBLE_SIZE_DUET)
     else:
         g = GestureRNN(mode="run")
     for i in range(num_attempts):
@@ -324,13 +326,13 @@ def cherry_pick_performances(num_attempts=5, model="quartet"):
         plot_gesture_only_score(plot_name, perf)
 
 
-def train_model(epochs, saving=True, model='quartet', num_nodes=512):
+def train_model(epochs, saving=True, model=MODEL_QUARTET, num_nodes=512):
     """ Train the model for a number of epochs. """
     # Presently, only the quartet model is working.
-    if model is 'quartet':
+    if model is MODEL_QUARTET:
         train_quartet(epochs=epochs, num_nodes=512)
-    elif model is 'duo':
-        train_duo(epochs=epochs, num_nodes=512)
+    elif model is MODEL_DUET:
+        train_duet(epochs=epochs, num_nodes=512)
 
 
 def train_quartet(epochs=30, num_nodes=512):
@@ -344,9 +346,9 @@ def train_quartet(epochs=30, num_nodes=512):
     print("Done training phew.")
 
 
-def train_duo(epochs=30, num_nodes=512):
+def train_duet(epochs=30, num_nodes=512):
     """ Train the model for a number of epochs. """
-    print("Training Duo Network")
+    print("Training Duet Network")
     np.random.seed(NP_RANDOM_STATE)
     tf.set_random_seed(TF_RANDOM_STATE)  # should this be removed?
     d = DuetDataManager(120, 64)
@@ -355,33 +357,25 @@ def train_duo(epochs=30, num_nodes=512):
     print("Training Complete.")
 
 
-def test_duo_eval(num_trials=100):
-    print("Duos not implemented yet, look in the notebook directory.")
-    g = GestureRNN(mode="run", ensemble_size=2)
-    sess = tf.Session()
-    # g.prepare_model_for_running(sess) # this will fail as it's not trained.
-    ens_gestures = [0]
-    for i in range(num_trials):
-        n = np.random.randint(len(GESTURE_CODES))
-        ens_gestures = g.generate_gestures(n, ens_gestures, sess)
-        print("in:", n, "out:", ens_gestures)
-    sess.close()
-
-
 def main(_):
     """ Command line accessible functions. """
+    tf.logging.set_verbosity(tf.logging.INFO)
+    if FLAGS.duet:
+        model_version = MODEL_DUET
+        print("Using Duet Model.")
+    else:
+        model_version = MODEL_QUARTET
+        print("Using Quartet Model.")
     if FLAGS.train:
-        train_model(epochs=FLAGS.epochs, saving=True, model='quartet')
-    if FLAGS.train_duo:
-        train_model(epochs=FLAGS.epochs, saving=True, model='duo')
+        train_model(epochs=FLAGS.epochs, saving=True, model=model_version)
     if FLAGS.generate:
-        generate_a_fake_performance(num_performances=FLAGS.num_perfs)
+        generate_a_fake_performance(num_performances=FLAGS.num_perfs, model=model_version)
     if FLAGS.test_eval:
-        test_evaluation()
+        test_evaluation(model=model_version)
     if FLAGS.test_train:
-        test_training()
+        test_training(model=model_version)
     if FLAGS.replicate_generate:
-        cherry_pick_performances(num_attempts=10)
+        cherry_pick_performances(num_attempts=10, model=model_version)
 
 
 def training_experiment():
