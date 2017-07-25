@@ -1,5 +1,7 @@
 # Gesture-RNN: A deep model of ensemble interaction in musical gestures
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.834268.svg)](https://doi.org/10.5281/zenodo.834268)
+
 `Gesture-RNN` is a deep model of interaction between an ensemble of improvising computer musicians. Rather than represent notes and rhythms, this approach to musical machine learning focusses on high-level musical gestures.
 
 In particular, `Gesture-RNN` is designed to represent ensemble free-improvised music made on touch-screens. In this kind of ensemble, rather than focussing on melody and harmony, the musicians often work as gestural explorers. Patterns of interaction with the instruments and between the musicians are the most important aspect of the performances. Touch-screen improvisations have been previously categorised in terms of nine simple touch-gestures, and a [large corpus of collaborative touch-screen performances is freely available](https://github.com/anucc/metatone-analysis). This dataset is used as training data in `Gesture-RNN`.
